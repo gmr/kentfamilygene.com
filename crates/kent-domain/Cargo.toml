@@ -1,0 +1,12 @@
+[package]
+name = "kent-domain"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kent-db = { path = "../kent-db" }
+async-graphql.workspace = true
+tokio.workspace = true
+serde.workspace = true
+chrono.workspace = true
+tracing.workspace = true

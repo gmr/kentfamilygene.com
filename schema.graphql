@@ -1,0 +1,23 @@
+type Lineage {
+  id: String!
+  originState: String
+  lineageNumber: Int
+  displayName: String!
+  region: String
+  statusNote: String
+  isNew: Boolean!
+  newLineageDate: String
+  createdDate: String
+  updatedDate: String
+}
+
+type LineageConnection {
+  items: [Lineage!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type Query {
+  lineages(region: String, offset: Int = 0, limit: Int = 50): LineageConnection!
+  lineage(id: String!): Lineage
+}

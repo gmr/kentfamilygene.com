@@ -1,0 +1,11 @@
+[package]
+name = "kent-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+neo4rs.workspace = true
+tokio.workspace = true
+serde.workspace = true
+chrono.workspace = true
+tracing.workspace = true
