@@ -19,11 +19,11 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [{ data: statsData, fetching: statsLoading }] = useStatsQuery();
   const [{ data: notesData, fetching: notesLoading }] = useAdminNotesQuery({
-    variables: { resolved: false, limit: 5 },
+    variables: { resolved: false },
   });
 
   const stats = statsData?.stats;
-  const notes = notesData?.adminNotes?.items ?? [];
+  const notes = (notesData?.adminNotes?.items ?? []).slice(0, 5);
 
   if (statsLoading || notesLoading) {
     return <div className="flex items-center justify-center h-64">Loading...</div>;
