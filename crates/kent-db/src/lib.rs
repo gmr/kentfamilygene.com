@@ -1,10 +1,32 @@
 use std::fmt;
 
-use neo4rs::{ConfigBuilder, Graph, Query};
+use neo4rs::{ConfigBuilder, Graph};
 use serde::Serialize;
 
-// Re-export Graph so downstream crates don't need a direct neo4rs dependency.
+// Re-export Graph and Query so downstream crates don't need a direct neo4rs dependency.
 pub use neo4rs::Graph as Neo4jGraph;
+pub use neo4rs::Query as Neo4jQuery;
+
+pub mod admin_note;
+pub mod dna_test;
+pub mod haplogroup;
+pub mod lineage;
+pub mod online_tree;
+pub mod participant;
+pub mod person;
+pub mod place;
+pub mod relationship;
+pub mod search;
+
+// Re-export entity functions at crate root for convenience.
+pub use admin_note::*;
+pub use dna_test::*;
+pub use haplogroup::*;
+pub use lineage::*;
+pub use online_tree::*;
+pub use participant::*;
+pub use person::*;
+pub use place::*;
 
 /// Row returned from Cypher queries for Lineage nodes.
 #[derive(Debug, Clone, Serialize)]
@@ -19,6 +41,105 @@ pub struct LineageRow {
     pub new_lineage_date: Option<String>,
     pub created_date: Option<String>,
     pub updated_date: Option<String>,
+}
+
+/// Row returned from Cypher queries for Person nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct PersonRow {
+    pub id: String,
+    pub given_name: String,
+    pub surname: String,
+    pub name_suffix: Option<String>,
+    pub name_prefix: Option<String>,
+    pub name_qualifier: Option<String>,
+    pub sex: Option<String>,
+    pub birth_date: Option<String>,
+    pub birth_date_sort: Option<String>,
+    pub birth_date_modifier: Option<String>,
+    pub birth_place: Option<String>,
+    pub death_date: Option<String>,
+    pub death_date_sort: Option<String>,
+    pub death_date_modifier: Option<String>,
+    pub death_place: Option<String>,
+    pub is_living: bool,
+    pub privacy_label: Option<String>,
+    pub is_immigrant_ancestor: bool,
+    pub notes: Option<String>,
+    pub created_date: Option<String>,
+    pub updated_date: Option<String>,
+}
+
+/// Row returned from Cypher queries for Participant nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct ParticipantRow {
+    pub id: String,
+    pub display_name: String,
+    pub email: Option<String>,
+    pub membership_type: Option<String>,
+    pub is_active: bool,
+    pub ftdna_kit_number: Option<String>,
+    pub join_date: Option<String>,
+    pub contact_note: Option<String>,
+    pub research_goal: Option<String>,
+    pub created_date: Option<String>,
+    pub updated_date: Option<String>,
+}
+
+/// Row returned from Cypher queries for Place nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaceRow {
+    pub id: String,
+    pub name: String,
+    pub county: Option<String>,
+    pub state: Option<String>,
+    pub country: Option<String>,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    pub familysearch_url: Option<String>,
+}
+
+/// Row returned from Cypher queries for Haplogroup nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct HaplogroupRow {
+    pub id: String,
+    pub name: String,
+    pub subclade: Option<String>,
+    pub abbreviation: Option<String>,
+    pub confirmation_status: Option<String>,
+    pub haplogroup_type: Option<String>,
+}
+
+/// Row returned from Cypher queries for DNATest nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct DnaTestRow {
+    pub id: String,
+    pub test_type: Option<String>,
+    pub test_name: Option<String>,
+    pub provider: Option<String>,
+    pub kit_number: Option<String>,
+    pub marker_count: Option<i64>,
+    pub registered_with_project: bool,
+    pub gedmatch_kit: Option<String>,
+}
+
+/// Row returned from Cypher queries for OnlineTree nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct OnlineTreeRow {
+    pub id: String,
+    pub platform: Option<String>,
+    pub username: Option<String>,
+    pub tree_name: Option<String>,
+    pub url: Option<String>,
+}
+
+/// Row returned from Cypher queries for AdminNote nodes.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminNoteRow {
+    pub id: String,
+    pub color: Option<String>,
+    pub text: String,
+    pub created_date: Option<String>,
+    pub resolved: bool,
 }
 
 /// Unified error type for kent-db operations.
@@ -59,89 +180,4 @@ pub async fn create_pool(uri: &str, user: &str, password: &str) -> Result<Graph,
         .password(password)
         .build()?;
     Ok(Graph::connect(config).await?)
-}
-
-/// Fetch all lineages, optionally filtered by region.
-pub async fn find_all_lineages(
-    graph: &Graph,
-    region: Option<&str>,
-    offset: i64,
-    limit: i64,
-) -> Result<(Vec<LineageRow>, i64), Error> {
-    let (query, count_query) = if let Some(region) = region {
-        (
-            Query::new(
-                "MATCH (l:Lineage) WHERE l.region = $region \
-                 RETURN l ORDER BY l.lineage_number \
-                 SKIP $offset LIMIT $limit"
-                    .to_string(),
-            )
-            .param("region", region)
-            .param("offset", offset)
-            .param("limit", limit),
-            Query::new(
-                "MATCH (l:Lineage) WHERE l.region = $region RETURN count(l) AS total".to_string(),
-            )
-            .param("region", region),
-        )
-    } else {
-        (
-            Query::new(
-                "MATCH (l:Lineage) \
-                 RETURN l ORDER BY l.region, l.lineage_number \
-                 SKIP $offset LIMIT $limit"
-                    .to_string(),
-            )
-            .param("offset", offset)
-            .param("limit", limit),
-            Query::new("MATCH (l:Lineage) RETURN count(l) AS total".to_string()),
-        )
-    };
-
-    let total = {
-        let mut result = graph.execute(count_query).await?;
-        if let Some(row) = result.next().await? {
-            row.get::<i64>("total").unwrap_or(0)
-        } else {
-            0
-        }
-    };
-
-    let mut result = graph.execute(query).await?;
-    let mut lineages = Vec::new();
-    while let Some(row) = result.next().await? {
-        let node: neo4rs::Node = row.get("l")?;
-        lineages.push(node_to_lineage_row(&node));
-    }
-
-    Ok((lineages, total))
-}
-
-/// Fetch a single lineage by ID.
-pub async fn find_lineage_by_id(graph: &Graph, id: &str) -> Result<Option<LineageRow>, Error> {
-    let query =
-        Query::new("MATCH (l:Lineage {id: $id}) RETURN l".to_string()).param("id", id);
-    let mut result = graph.execute(query).await?;
-
-    if let Some(row) = result.next().await? {
-        let node: neo4rs::Node = row.get("l")?;
-        Ok(Some(node_to_lineage_row(&node)))
-    } else {
-        Ok(None)
-    }
-}
-
-fn node_to_lineage_row(node: &neo4rs::Node) -> LineageRow {
-    LineageRow {
-        id: node.get("id").unwrap_or_default(),
-        origin_state: node.get("origin_state").ok(),
-        lineage_number: node.get("lineage_number").ok(),
-        display_name: node.get("display_name").unwrap_or_default(),
-        region: node.get("region").ok(),
-        status_note: node.get("status_note").ok(),
-        is_new: node.get("is_new").unwrap_or(false),
-        new_lineage_date: node.get("new_lineage_date").ok(),
-        created_date: node.get("created_date").ok(),
-        updated_date: node.get("updated_date").ok(),
-    }
 }

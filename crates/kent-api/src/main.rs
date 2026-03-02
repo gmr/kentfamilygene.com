@@ -3,13 +3,14 @@ use std::net::SocketAddr;
 use async_graphql::http::GraphiQLSource;
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
+    Router,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse},
     routing::get,
-    Router,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use clap::{Parser, Subcommand};
 use tower_http::{
     cors::CorsLayer,
     services::{ServeDir, ServeFile},
@@ -17,7 +18,28 @@ use tower_http::{
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-use kent_domain::KentSchema;
+use kent_domain::{AuthContext, KentSchema};
+
+mod import;
+
+#[derive(Parser)]
+#[command(name = "kent-api", about = "Kent Family & DNA Project API server")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Import data from extracted JSON file into Neo4j
+    Import {
+        /// Path to the extracted-data.json file
+        #[arg(short, long)]
+        file: String,
+    },
+    /// Start the API server (default)
+    Serve,
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -35,6 +57,38 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Commands::Import { file }) => {
+            run_import(&file).await;
+        }
+        Some(Commands::Serve) | None => {
+            run_server().await;
+        }
+    }
+}
+
+async fn run_import(file_path: &str) {
+    let neo4j_uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".into());
+    let neo4j_user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
+    let neo4j_password = std::env::var("NEO4J_PASSWORD").expect("NEO4J_PASSWORD must be set");
+
+    tracing::info!("Connecting to Neo4j at {neo4j_uri}");
+    let graph = kent_db::create_pool(&neo4j_uri, &neo4j_user, &neo4j_password)
+        .await
+        .expect("Failed to connect to Neo4j");
+    tracing::info!("Neo4j connection established");
+
+    // Ensure search indexes exist
+    if let Err(e) = kent_db::search::ensure_search_indexes(&graph).await {
+        tracing::warn!("Failed to create search indexes: {e}");
+    }
+
+    import::run_import(&graph, file_path).await;
+}
+
+async fn run_server() {
     let neo4j_uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".into());
     let neo4j_user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
     let neo4j_password = std::env::var("NEO4J_PASSWORD").expect("NEO4J_PASSWORD must be set");
@@ -51,6 +105,11 @@ async fn main() {
         .await
         .expect("Failed to connect to Neo4j");
     tracing::info!("Neo4j connection established");
+
+    // Ensure search indexes exist
+    if let Err(e) = kent_db::search::ensure_search_indexes(&graph).await {
+        tracing::warn!("Failed to create search indexes (Neo4j may not support fulltext): {e}");
+    }
 
     let schema = kent_domain::build_schema(graph);
 
@@ -105,12 +164,6 @@ async fn graphql_playground() -> impl IntoResponse {
 /// Health check endpoint.
 async fn health_check() -> impl IntoResponse {
     StatusCode::OK
-}
-
-/// Authentication context passed into GraphQL resolvers.
-#[derive(Debug, Clone)]
-pub struct AuthContext {
-    pub is_authenticated: bool,
 }
 
 /// Decode and verify Basic Auth credentials.

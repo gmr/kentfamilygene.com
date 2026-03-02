@@ -1,3 +1,62 @@
+## Kent Family & DNA Project — GraphQL Schema
+
+# ── Scalars / Enums ─────────────────────────────────────────────────
+
+enum MembershipType {
+  PROJECT_MEMBER
+  ASSOCIATE_RESEARCHER
+}
+
+enum DateModifier {
+  EXACT
+  ABOUT
+  BEFORE
+  AFTER
+  CALCULATED
+  PROBABLY
+}
+
+enum PersonRole {
+  POTENTIAL_ANCESTOR
+  CONFIRMED_ANCESTOR
+  BRICK_WALL
+  IMMIGRANT_ANCESTOR
+  DESCENDANT
+}
+
+enum ConfirmationStatus {
+  PREDICTED
+  CONFIRMED
+}
+
+enum HaplogroupType {
+  Y_DNA
+  MT_DNA
+}
+
+enum NoteColor {
+  PINK
+  ORANGE
+  BLUE
+  GREEN
+}
+
+enum SearchType {
+  PERSON
+  PARTICIPANT
+  LINEAGE
+  PLACE
+  HAPLOGROUP
+}
+
+enum AnnotationTarget {
+  PERSON
+  PARTICIPANT
+  LINEAGE
+}
+
+# ── Object Types ────────────────────────────────────────────────────
+
 type Lineage {
   id: String!
   originState: String
@@ -11,13 +70,402 @@ type Lineage {
   updatedDate: String
 }
 
+type Person {
+  id: String!
+  givenName: String!
+  surname: String!
+  nameSuffix: String
+  namePrefix: String
+  nameQualifier: String
+  sex: String
+  birthDate: String
+  birthDateSort: String
+  birthDateModifier: String
+  birthPlace: String
+  deathDate: String
+  deathDateSort: String
+  deathDateModifier: String
+  deathPlace: String
+  isLiving: Boolean!
+  privacyLabel: String
+  isImmigrantAncestor: Boolean!
+  notes: String
+  createdDate: String
+  updatedDate: String
+}
+
+type Participant {
+  id: String!
+  displayName: String!
+  email: String
+  membershipType: String
+  isActive: Boolean!
+  ftdnaKitNumber: String
+  joinDate: String
+  contactNote: String
+  researchGoal: String
+  createdDate: String
+  updatedDate: String
+}
+
+type Place {
+  id: String!
+  name: String!
+  county: String
+  state: String
+  country: String
+  lat: Float
+  lon: Float
+  familysearchUrl: String
+}
+
+type Haplogroup {
+  id: String!
+  name: String!
+  subclade: String
+  abbreviation: String
+  confirmationStatus: String
+  haplogroupType: String
+}
+
+type DnaTest {
+  id: String!
+  testType: String
+  testName: String
+  provider: String
+  kitNumber: String
+  markerCount: Int
+  registeredWithProject: Boolean!
+  gedmatchKit: String
+}
+
+type OnlineTree {
+  id: String!
+  platform: String
+  username: String
+  treeName: String
+  url: String
+}
+
+type AdminNote {
+  id: String!
+  color: String
+  text: String!
+  createdDate: String
+  resolved: Boolean!
+}
+
+# ── Connections (Pagination) ────────────────────────────────────────
+
 type LineageConnection {
   items: [Lineage!]!
   total: Int!
   hasMore: Boolean!
 }
 
+type PersonConnection {
+  items: [Person!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type ParticipantConnection {
+  items: [Participant!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type PlaceConnection {
+  items: [Place!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type HaplogroupConnection {
+  items: [Haplogroup!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type AdminNoteConnection {
+  items: [AdminNote!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+# ── Search ──────────────────────────────────────────────────────────
+
+type SearchResultItem {
+  id: String!
+  resultType: String!
+  display: String!
+  score: Float!
+}
+
+type SearchResponse {
+  items: [SearchResultItem!]!
+}
+
+type Stats {
+  lineageCount: Int!
+  personCount: Int!
+  participantCount: Int!
+  haplogroupCount: Int!
+  placeCount: Int!
+}
+
+# ── Queries ─────────────────────────────────────────────────────────
+
 type Query {
+  # Public (no auth, privacy-masked persons)
   lineages(region: String, offset: Int = 0, limit: Int = 50): LineageConnection!
   lineage(id: String!): Lineage
+  persons(surname: String, offset: Int = 0, limit: Int = 50): PersonConnection!
+  person(id: String!): Person
+  participants(activeOnly: Boolean, offset: Int = 0, limit: Int = 50): ParticipantConnection!
+  participant(id: String!): Participant
+  haplogroups(haplogroupType: String, offset: Int = 0, limit: Int = 50): HaplogroupConnection!
+  places(country: String, offset: Int = 0, limit: Int = 50): PlaceConnection!
+  search(query: String!, types: [SearchType!], limit: Int = 20): SearchResponse!
+  stats: Stats!
+
+  # Admin (auth required, full data)
+  adminPerson(id: String!): Person
+  adminParticipant(id: String!): Participant
+  adminNotes(color: String, resolved: Boolean, offset: Int = 0, limit: Int = 50): AdminNoteConnection!
+}
+
+# ── Input Types ─────────────────────────────────────────────────────
+
+input CreateLineageInput {
+  originState: String
+  lineageNumber: Int
+  displayName: String!
+  region: String
+  statusNote: String
+  isNew: Boolean
+  newLineageDate: String
+}
+
+input UpdateLineageInput {
+  originState: String
+  lineageNumber: Int
+  displayName: String
+  region: String
+  statusNote: String
+  isNew: Boolean
+  newLineageDate: String
+}
+
+input CreatePersonInput {
+  givenName: String!
+  surname: String!
+  nameSuffix: String
+  namePrefix: String
+  nameQualifier: String
+  sex: String
+  birthDate: String
+  birthDateSort: String
+  birthDateModifier: String
+  birthPlace: String
+  deathDate: String
+  deathDateSort: String
+  deathDateModifier: String
+  deathPlace: String
+  privacyLabel: String
+  isImmigrantAncestor: Boolean
+  notes: String
+}
+
+input UpdatePersonInput {
+  givenName: String
+  surname: String
+  nameSuffix: String
+  namePrefix: String
+  nameQualifier: String
+  sex: String
+  birthDate: String
+  birthDateSort: String
+  birthDateModifier: String
+  birthPlace: String
+  deathDate: String
+  deathDateSort: String
+  deathDateModifier: String
+  deathPlace: String
+  privacyLabel: String
+  isImmigrantAncestor: Boolean
+  notes: String
+}
+
+input CreateParticipantInput {
+  displayName: String!
+  email: String
+  membershipType: String
+  isActive: Boolean
+  ftdnaKitNumber: String
+  joinDate: String
+  contactNote: String
+  researchGoal: String
+}
+
+input UpdateParticipantInput {
+  displayName: String
+  email: String
+  membershipType: String
+  isActive: Boolean
+  ftdnaKitNumber: String
+  joinDate: String
+  contactNote: String
+  researchGoal: String
+}
+
+input CreatePlaceInput {
+  name: String!
+  county: String
+  state: String
+  country: String
+  lat: Float
+  lon: Float
+  familysearchUrl: String
+}
+
+input UpdatePlaceInput {
+  name: String
+  county: String
+  state: String
+  country: String
+  lat: Float
+  lon: Float
+  familysearchUrl: String
+}
+
+input CreateHaplogroupInput {
+  name: String!
+  subclade: String
+  abbreviation: String
+  confirmationStatus: String
+  haplogroupType: String
+}
+
+input UpdateHaplogroupInput {
+  name: String
+  subclade: String
+  abbreviation: String
+  confirmationStatus: String
+  haplogroupType: String
+}
+
+input CreateDnaTestInput {
+  testType: String
+  testName: String
+  provider: String
+  kitNumber: String
+  markerCount: Int
+  registeredWithProject: Boolean
+  gedmatchKit: String
+}
+
+input CreateOnlineTreeInput {
+  platform: String
+  username: String
+  treeName: String
+  url: String
+}
+
+input BelongsToInput {
+  role: String
+  generationNumber: Int
+  certainty: String
+}
+
+input SpouseOfInput {
+  marriageDate: String
+  marriagePlace: String
+  marriageOrder: Int
+  spouseSurname: String
+}
+
+input ResearchesInput {
+  branchLabel: String
+}
+
+input GeneticMatchInput {
+  markerLevel: Int
+  matchType: String
+  notes: String
+}
+
+input MigrationStopInput {
+  stopOrder: Int!
+  role: String
+}
+
+input CreateAdminNoteInput {
+  color: String
+  text: String!
+}
+
+input UpdateAdminNoteInput {
+  color: String
+  text: String
+  resolved: Boolean
+}
+
+# ── Mutations ───────────────────────────────────────────────────────
+
+type Mutation {
+  # All require auth
+
+  # Lineage CRUD
+  createLineage(input: CreateLineageInput!): Lineage!
+  updateLineage(id: String!, input: UpdateLineageInput!): Lineage!
+  deleteLineage(id: String!): Boolean!
+
+  # Person CRUD
+  createPerson(input: CreatePersonInput!): Person!
+  updatePerson(id: String!, input: UpdatePersonInput!): Person!
+  deletePerson(id: String!): Boolean!
+
+  # Participant CRUD
+  createParticipant(input: CreateParticipantInput!): Participant!
+  updateParticipant(id: String!, input: UpdateParticipantInput!): Participant!
+  deleteParticipant(id: String!): Boolean!
+
+  # Place CRUD
+  createPlace(input: CreatePlaceInput!): Place!
+  updatePlace(id: String!, input: UpdatePlaceInput!): Place!
+  deletePlace(id: String!): Boolean!
+
+  # Haplogroup CRUD
+  createHaplogroup(input: CreateHaplogroupInput!): Haplogroup!
+  updateHaplogroup(id: String!, input: UpdateHaplogroupInput!): Haplogroup!
+  deleteHaplogroup(id: String!): Boolean!
+
+  # Relationship mutations
+  addPersonToLineage(personId: String!, lineageId: String!, input: BelongsToInput!): Boolean!
+  removePersonFromLineage(personId: String!, lineageId: String!): Boolean!
+  setParentOf(parentId: String!, childId: String!, relationshipType: String): Boolean!
+  removeParentOf(parentId: String!, childId: String!): Boolean!
+  setSpouseOf(person1Id: String!, person2Id: String!, input: SpouseOfInput): Boolean!
+  removeSpouseOf(person1Id: String!, person2Id: String!): Boolean!
+  linkParticipantToPerson(participantId: String!, personId: String!): Boolean!
+  unlinkParticipantFromPerson(participantId: String!): Boolean!
+  addParticipantToLineage(participantId: String!, lineageId: String!, input: ResearchesInput!): Boolean!
+  removeParticipantFromLineage(participantId: String!, lineageId: String!): Boolean!
+  addDnaTest(participantId: String!, input: CreateDnaTestInput!): DnaTest!
+  removeDnaTest(testId: String!): Boolean!
+  assignHaplogroup(participantId: String!, haplogroupId: String!): Boolean!
+  unassignHaplogroup(participantId: String!, haplogroupId: String!): Boolean!
+  addOnlineTree(participantId: String!, input: CreateOnlineTreeInput!): OnlineTree!
+  removeOnlineTree(treeId: String!): Boolean!
+  recordGeneticMatch(participant1Id: String!, participant2Id: String!, input: GeneticMatchInput!): Boolean!
+  removeGeneticMatch(participant1Id: String!, participant2Id: String!): Boolean!
+  addMigrationStop(lineageId: String!, placeId: String!, input: MigrationStopInput!): Boolean!
+  removeMigrationStop(lineageId: String!, placeId: String!): Boolean!
+
+  # AdminNote CRUD
+  createAdminNote(input: CreateAdminNoteInput!): AdminNote!
+  updateAdminNote(id: String!, input: UpdateAdminNoteInput!): AdminNote!
+  deleteAdminNote(id: String!): Boolean!
+  attachAdminNote(noteId: String!, targetId: String!, targetType: AnnotationTarget!): Boolean!
 }
