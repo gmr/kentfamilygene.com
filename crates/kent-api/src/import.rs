@@ -155,7 +155,7 @@ pub async fn run_import(graph: &Graph, file_path: &str) {
         let id = lineage
             .id
             .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| Uuid::now_v7().to_string());
         let display_name = lineage.display_name.clone().unwrap_or_default();
         if display_name.is_empty() {
             continue;
@@ -209,7 +209,7 @@ pub async fn run_import(graph: &Graph, file_path: &str) {
         let id = haplogroup
             .id
             .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| Uuid::now_v7().to_string());
         let name = haplogroup.name.clone().unwrap_or_default();
         if name.is_empty() {
             continue;
@@ -254,7 +254,7 @@ pub async fn run_import(graph: &Graph, file_path: &str) {
         let id = place
             .id
             .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| Uuid::now_v7().to_string());
         let name = place.name.clone().unwrap_or_default();
         if name.is_empty() {
             continue;
@@ -297,7 +297,7 @@ pub async fn run_import(graph: &Graph, file_path: &str) {
         let id = participant
             .id
             .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| Uuid::now_v7().to_string());
         let display_name = participant.display_name.clone().unwrap_or_default();
         if display_name.is_empty() {
             continue;
@@ -362,7 +362,7 @@ pub async fn run_import(graph: &Graph, file_path: &str) {
             let test_id = test
                 .id
                 .clone()
-                .unwrap_or_else(|| Uuid::new_v4().to_string());
+                .unwrap_or_else(|| Uuid::now_v7().to_string());
 
             let query = Query::new(
                 "MATCH (p:Participant {id: $participant_id}) \
@@ -407,7 +407,7 @@ pub async fn run_import(graph: &Graph, file_path: &str) {
         let id = person
             .id
             .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .unwrap_or_else(|| Uuid::now_v7().to_string());
         let given_name = person.given_name.clone().unwrap_or_default();
         let surname = person.surname.clone().unwrap_or_default();
         if given_name.is_empty() && surname.is_empty() {

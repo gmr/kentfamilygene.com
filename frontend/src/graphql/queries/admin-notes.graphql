@@ -1,5 +1,5 @@
-query AdminNotes($color: String, $resolved: Boolean, $offset: Int, $limit: Int) {
-  adminNotes(color: $color, resolved: $resolved, offset: $offset, limit: $limit) {
+query AdminNotes($color: String, $resolved: Boolean) {
+  adminNotes(color: $color, resolved: $resolved) {
     items {
       id
       color

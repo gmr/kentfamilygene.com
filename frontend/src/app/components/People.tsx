@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -7,37 +7,42 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Pencil, Plus, Search, X } from 'lucide-react';
-import { usePersonsQuery } from '../../generated/graphql';
+import { Plus, Search, X } from 'lucide-react';
+import { useAdminPersonsQuery } from '../../generated/graphql';
 
 export function People() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [sexFilter, setSexFilter] = useState<string>('all');
   const [livingFilter, setLivingFilter] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') ?? '');
   const [immigrantFilter, setImmigrantFilter] = useState(false);
-  const [offset, setOffset] = useState(0);
+  const [showPlaceholders, setShowPlaceholders] = useState(false);
 
-  const [{ data, fetching, error }] = usePersonsQuery({
+  // Initialize search from URL params
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q) setSearchQuery(q);
+  }, [searchParams]);
+
+  const [{ data, fetching, error }] = useAdminPersonsQuery({
     variables: {
-      offset,
-      limit: 50,
+      includePlaceholders: showPlaceholders || undefined,
     },
   });
 
-  const people = data?.persons?.items ?? [];
-  const total = data?.persons?.total ?? 0;
-  const hasMore = data?.persons?.hasMore ?? false;
+  const people = data?.adminPersons?.items ?? [];
+  const total = data?.adminPersons?.total ?? 0;
 
-  // Client-side filters on returned page
+  // Client-side filters on full dataset
   const filteredPeople = useMemo(() => {
     let filtered = [...people];
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(p =>
-        p.givenName.toLowerCase().includes(query) ||
-        p.surname.toLowerCase().includes(query) ||
+        (p.givenName ?? '').toLowerCase().includes(query) ||
+        (p.surname ?? '').toLowerCase().includes(query) ||
         p.birthPlace?.toLowerCase().includes(query) ||
         p.deathPlace?.toLowerCase().includes(query)
       );
@@ -98,8 +103,8 @@ export function People() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="M">Male</SelectItem>
-                  <SelectItem value="F">Female</SelectItem>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -134,18 +139,25 @@ export function People() {
               </div>
             </div>
 
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <Button
                 variant={immigrantFilter ? 'default' : 'outline'}
                 onClick={() => setImmigrantFilter(!immigrantFilter)}
-                className="w-full"
+                className="flex-1"
               >
                 Immigrant Ancestor
+              </Button>
+              <Button
+                variant={showPlaceholders ? 'default' : 'outline'}
+                onClick={() => setShowPlaceholders(!showPlaceholders)}
+                className="flex-1"
+              >
+                Show Placeholders
               </Button>
             </div>
           </div>
 
-          {(searchQuery || sexFilter !== 'all' || livingFilter !== 'all' || immigrantFilter) && (
+          {(searchQuery || sexFilter !== 'all' || livingFilter !== 'all' || immigrantFilter || showPlaceholders) && (
             <div className="flex items-center gap-2 mt-4">
               <span className="text-sm text-gray-600">Active filters:</span>
               {searchQuery && (
@@ -172,6 +184,12 @@ export function People() {
                   <X className="h-3 w-3 cursor-pointer" onClick={() => setImmigrantFilter(false)} />
                 </Badge>
               )}
+              {showPlaceholders && (
+                <Badge variant="secondary" className="gap-1">
+                  Placeholders
+                  <X className="h-3 w-3 cursor-pointer" onClick={() => setShowPlaceholders(false)} />
+                </Badge>
+              )}
             </div>
           )}
         </CardContent>
@@ -194,17 +212,24 @@ export function People() {
                     <TableHead>Birth Place</TableHead>
                     <TableHead>Death Date</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredPeople.map((person) => (
-                    <TableRow key={person.id}>
+                    <TableRow key={person.id} className="cursor-pointer" onClick={() => navigate(`/admin/people/${person.id}`)}>
                       <TableCell className="font-medium">
                         <div>
-                          {person.givenName} {person.surname}
-                          {person.nameQualifier && (
-                            <span className="text-gray-500 ml-1">{person.nameQualifier}</span>
+                          {person.givenName || person.surname ? (
+                            <>
+                              {person.givenName} {person.surname}
+                              {person.nameQualifier && (
+                                <span className="text-gray-500 ml-1">{person.nameQualifier}</span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-gray-400 italic">
+                              [{person.privacyLabel || 'Unknown'}]
+                            </span>
                           )}
                         </div>
                       </TableCell>
@@ -235,13 +260,6 @@ export function People() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/people/${person.id}`)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -253,32 +271,11 @@ export function People() {
                 </div>
               )}
 
-              {/* Pagination */}
-              {total > 50 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <span className="text-sm text-gray-600">
-                    Showing {offset + 1}-{Math.min(offset + 50, total)} of {total}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={offset === 0}
-                      onClick={() => setOffset(Math.max(0, offset - 50))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!hasMore}
-                      onClick={() => setOffset(offset + 50)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <div className="mt-4 pt-4 border-t">
+                <span className="text-sm text-gray-600">
+                  Showing {filteredPeople.length} of {total} people
+                </span>
+              </div>
             </>
           )}
         </CardContent>

@@ -1,0 +1,3 @@
+mutation SetParentOf($parentId: String!, $childId: String!, $relationshipType: String) {
+  setParentOf(parentId: $parentId, childId: $childId, relationshipType: $relationshipType)
+}

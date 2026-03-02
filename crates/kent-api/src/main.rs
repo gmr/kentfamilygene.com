@@ -20,6 +20,7 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use kent_domain::{AuthContext, KentSchema};
 
+mod html_import;
 mod import;
 
 #[derive(Parser)]
@@ -36,6 +37,15 @@ enum Commands {
         /// Path to the extracted-data.json file
         #[arg(short, long)]
         file: String,
+    },
+    /// Import data from FTDNA source HTML file into Neo4j
+    ImportHtml {
+        /// Path to the source.html file
+        #[arg(short, long)]
+        file: String,
+        /// Output parsed JSON without writing to Neo4j
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
     /// Start the API server (default)
     Serve,
@@ -63,6 +73,9 @@ async fn main() {
         Some(Commands::Import { file }) => {
             run_import(&file).await;
         }
+        Some(Commands::ImportHtml { file, dry_run }) => {
+            run_html_import(&file, dry_run).await;
+        }
         Some(Commands::Serve) | None => {
             run_server().await;
         }
@@ -86,6 +99,60 @@ async fn run_import(file_path: &str) {
     }
 
     import::run_import(&graph, file_path).await;
+}
+
+async fn run_html_import(file_path: &str, dry_run: bool) {
+    if dry_run {
+        tracing::info!("Dry-run mode: will parse HTML and output JSON without touching Neo4j");
+        // Still need a dummy graph reference — but we won't actually use it.
+        // Parse-only path avoids requiring Neo4j credentials for dry-run.
+        let html = match std::fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to read file: {e}");
+                return;
+            }
+        };
+        let doc = html_import::parse_document::parse_html(&html);
+
+        let participant_count: usize = doc
+            .lineages
+            .iter()
+            .map(|l| l.participants.len())
+            .sum::<usize>()
+            + doc.newest_members.len();
+
+        tracing::info!("Parse complete:");
+        tracing::info!("  Lineages:           {}", doc.lineages.len());
+        tracing::info!("  Newest members:     {}", doc.newest_members.len());
+        tracing::info!("  Total participants: {participant_count}");
+        tracing::info!("  Warnings:           {}", doc.warnings.len());
+
+        for w in &doc.warnings {
+            tracing::warn!("  {w}");
+        }
+
+        match serde_json::to_string_pretty(&doc) {
+            Ok(json) => println!("{json}"),
+            Err(e) => tracing::error!("Failed to serialize to JSON: {e}"),
+        }
+    } else {
+        let neo4j_uri =
+            std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".into());
+        let neo4j_user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
+        let neo4j_password = std::env::var("NEO4J_PASSWORD").expect("NEO4J_PASSWORD must be set");
+
+        tracing::info!("Connecting to Neo4j at {neo4j_uri}");
+        let graph = kent_db::create_pool(&neo4j_uri, &neo4j_user, &neo4j_password)
+            .await
+            .expect("Failed to connect to Neo4j");
+
+        if let Err(e) = kent_db::search::ensure_search_indexes(&graph).await {
+            tracing::warn!("Failed to create search indexes: {e}");
+        }
+
+        html_import::run_html_import(&graph, file_path, false).await;
+    }
 }
 
 async fn run_server() {

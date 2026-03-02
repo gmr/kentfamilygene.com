@@ -1,5 +1,5 @@
-query Lineages($region: String, $offset: Int, $limit: Int) {
-  lineages(region: $region, offset: $offset, limit: $limit) {
+query Lineages($region: String) {
+  lineages(region: $region) {
     items {
       id
       originState

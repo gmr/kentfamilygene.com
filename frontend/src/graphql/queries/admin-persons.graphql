@@ -1,0 +1,27 @@
+query AdminPersons($surname: String, $includePlaceholders: Boolean) {
+  adminPersons(surname: $surname, includePlaceholders: $includePlaceholders) {
+    items {
+      id
+      givenName
+      surname
+      nameSuffix
+      namePrefix
+      nameQualifier
+      sex
+      birthDate
+      birthDateModifier
+      birthPlace
+      deathDate
+      deathDateModifier
+      deathPlace
+      isLiving
+      privacyLabel
+      isImmigrantAncestor
+      notes
+      createdDate
+      updatedDate
+    }
+    total
+    hasMore
+  }
+}

@@ -83,13 +83,10 @@ pub async fn create_haplogroup(graph: &Graph, row: &HaplogroupRow) -> Result<Hap
     )
     .param("id", row.id.clone())
     .param("name", row.name.clone())
-    .param("subclade", row.subclade.clone().unwrap_or_default())
-    .param("abbreviation", row.abbreviation.clone().unwrap_or_default())
-    .param(
-        "confirmation_status",
-        row.confirmation_status.clone().unwrap_or_default(),
-    )
-    .param("type", row.haplogroup_type.clone().unwrap_or_default());
+    .param("subclade", row.subclade.clone())
+    .param("abbreviation", row.abbreviation.clone())
+    .param("confirmation_status", row.confirmation_status.clone())
+    .param("type", row.haplogroup_type.clone());
 
     let mut result = graph.execute(query).await?;
     let r = result
@@ -115,13 +112,10 @@ pub async fn update_haplogroup(
     )
     .param("id", id)
     .param("name", row.name.clone())
-    .param("subclade", row.subclade.clone().unwrap_or_default())
-    .param("abbreviation", row.abbreviation.clone().unwrap_or_default())
-    .param(
-        "confirmation_status",
-        row.confirmation_status.clone().unwrap_or_default(),
-    )
-    .param("type", row.haplogroup_type.clone().unwrap_or_default());
+    .param("subclade", row.subclade.clone())
+    .param("abbreviation", row.abbreviation.clone())
+    .param("confirmation_status", row.confirmation_status.clone())
+    .param("type", row.haplogroup_type.clone());
 
     let mut result = graph.execute(query).await?;
     if let Some(r) = result.next().await? {
@@ -167,13 +161,18 @@ pub async fn delete_haplogroup(graph: &Graph, id: &str) -> Result<bool, Error> {
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_haplogroup_row(node: &neo4rs::Node) -> HaplogroupRow {
     HaplogroupRow {
         id: node.get("id").unwrap_or_default(),
         name: node.get("name").unwrap_or_default(),
-        subclade: node.get("subclade").ok(),
-        abbreviation: node.get("abbreviation").ok(),
-        confirmation_status: node.get("confirmation_status").ok(),
-        haplogroup_type: node.get("type").ok(),
+        subclade: non_empty(node, "subclade"),
+        abbreviation: non_empty(node, "abbreviation"),
+        confirmation_status: non_empty(node, "confirmation_status"),
+        haplogroup_type: non_empty(node, "type"),
     }
 }

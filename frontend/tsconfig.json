@@ -20,17 +20,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "codegen.ts"],
-  "exclude": [
-    "src/app/components/forms",
-    "src/app/components/haplogroups",
-    "src/app/components/notes",
-    "src/app/components/places",
-    "src/app/components/shared",
-    "src/app/components/PersonFormComponents/PlaceTypeahead.tsx",
-    "src/app/components/PersonFormComponents/AdminNotesList.tsx",
-    "src/app/components/PersonFormComponents/RelationshipManager.tsx",
-    "src/app/components/PersonFormComponents/LineageAssignmentsList.tsx",
-    "src/app/components/ParticipantFormComponents"
-  ]
+  "include": ["src", "codegen.ts"]
 }

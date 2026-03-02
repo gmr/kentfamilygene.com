@@ -1,0 +1,3 @@
+mutation SetSpouseOf($person1Id: String!, $person2Id: String!, $input: SpouseOfInput) {
+  setSpouseOf(person1Id: $person1Id, person2Id: $person2Id, input: $input)
+}

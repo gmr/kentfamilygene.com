@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Pencil, Plus, Search, X, Trash2 } from 'lucide-react';
+import { Plus, Search, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useLineagesQuery,
@@ -38,21 +38,10 @@ export function Lineages() {
   const [regionFilter, setRegionFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [newLineagesFilter, setNewLineagesFilter] = useState(false);
-  const [offset, setOffset] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingLineage, setEditingLineage] = useState<Lineage | null>(null);
 
-  const [{ data: allData }] = useLineagesQuery({
-    variables: { offset: 0, limit: 500 },
-  });
-
-  const [{ data, fetching, error }, refetchLineages] = useLineagesQuery({
-    variables: {
-      region: regionFilter !== 'all' ? regionFilter : undefined,
-      offset,
-      limit: 50,
-    },
-  });
+  const [{ data, fetching, error }, refetchLineages] = useLineagesQuery();
 
   const [, createLineage] = useCreateLineageMutation();
   const [, updateLineage] = useUpdateLineageMutation();
@@ -60,15 +49,17 @@ export function Lineages() {
 
   const lineages = data?.lineages?.items ?? [];
   const total = data?.lineages?.total ?? 0;
-  const hasMore = data?.lineages?.hasMore ?? false;
 
   const regions = useMemo(() => {
-    const allLineages = allData?.lineages?.items ?? [];
-    return Array.from(new Set(allLineages.map(l => l.region).filter(Boolean))).sort() as string[];
-  }, [allData]);
+    return Array.from(new Set(lineages.map(l => l.region).filter(Boolean))).sort() as string[];
+  }, [lineages]);
 
   const filteredLineages = useMemo(() => {
     let filtered = [...lineages];
+
+    if (regionFilter !== 'all') {
+      filtered = filtered.filter(l => l.region === regionFilter);
+    }
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -83,7 +74,7 @@ export function Lineages() {
     }
 
     return filtered;
-  }, [lineages, searchQuery, newLineagesFilter]);
+  }, [lineages, regionFilter, searchQuery, newLineagesFilter]);
 
   const isEditing = editingLineage !== null;
   const modalOpen = showCreateModal || isEditing;
@@ -200,7 +191,7 @@ export function Lineages() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <Label>Region</Label>
-              <Select value={regionFilter} onValueChange={(v) => { setRegionFilter(v); setOffset(0); }}>
+              <Select value={regionFilter} onValueChange={(v) => setRegionFilter(v)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -280,12 +271,11 @@ export function Lineages() {
                     <TableHead>No.</TableHead>
                     <TableHead>Display Name</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredLineages.map((lineage) => (
-                    <TableRow key={lineage.id}>
+                    <TableRow key={lineage.id} className="cursor-pointer" onClick={() => setEditingLineage(lineage)}>
                       <TableCell className="font-medium">{lineage.region}</TableCell>
                       <TableCell>{lineage.originState}</TableCell>
                       <TableCell>{lineage.lineageNumber}</TableCell>
@@ -302,17 +292,6 @@ export function Lineages() {
                           <span className="text-sm text-gray-600">{lineage.statusNote}</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingLineage(lineage)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -324,32 +303,11 @@ export function Lineages() {
                 </div>
               )}
 
-              {/* Pagination */}
-              {total > 50 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <span className="text-sm text-gray-600">
-                    Showing {offset + 1}-{Math.min(offset + 50, total)} of {total}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={offset === 0}
-                      onClick={() => setOffset(Math.max(0, offset - 50))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!hasMore}
-                      onClick={() => setOffset(offset + 50)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <div className="flex items-center justify-end mt-4 pt-4 border-t">
+                <span className="text-sm text-gray-600">
+                  Showing {filteredLineages.length} of {total} lineages
+                </span>
+              </div>
             </>
           )}
         </CardContent>

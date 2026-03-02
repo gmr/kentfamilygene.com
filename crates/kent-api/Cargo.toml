@@ -22,3 +22,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+scraper = "0.22"
+regex = "1"
+html-escape = "0.2"

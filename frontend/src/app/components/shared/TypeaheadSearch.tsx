@@ -3,165 +3,100 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '../ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Button } from '../ui/button';
-import { Search, Plus, X, Loader2 } from 'lucide-react';
-import { peopleAPI, participantsAPI, placesAPI, lineagesAPI, haplogroupsAPI } from '../../../lib/api';
+import { Search, X, Loader2 } from 'lucide-react';
+import { useSearchQuery, SearchType } from '../../../generated/graphql';
 
-// Simple debounce utility
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
+export interface SearchResult {
+  id: string;
+  display: string;
+  resultType: string;
 }
 
-export interface TypeaheadSearchProps<T extends { id: string }> {
-  // Core behavior
+export interface TypeaheadSearchProps {
   entityType: 'person' | 'participant' | 'place' | 'lineage' | 'haplogroup';
-  onSelect: (entity: T) => void;
-  onCreate?: () => void; // Show "Create New" option
-
-  // Display
+  onSelect: (result: SearchResult) => void;
   placeholder?: string;
   label?: string;
-  formatResult: (entity: T) => { primary: string; secondary?: string; avatar?: React.ReactNode };
-
-  // Search configuration
-  searchEndpoint?: string; // Override default /api/admin/{entityType}/search
-  debounceMs?: number; // Default 200ms
-  minChars?: number; // Default 2
-  maxResults?: number; // Default 10
-
-  // State
-  initialValue?: T;
+  debounceMs?: number;
+  minChars?: number;
+  maxResults?: number;
+  selectedValue?: SearchResult;
+  onClear?: () => void;
   disabled?: boolean;
   error?: string;
+  excludeIds?: string[];
 }
 
-export function TypeaheadSearch<T extends { id: string }>({
+const ENTITY_TO_SEARCH_TYPE: Record<string, SearchType> = {
+  person: SearchType.Person,
+  participant: SearchType.Participant,
+  place: SearchType.Place,
+  lineage: SearchType.Lineage,
+  haplogroup: SearchType.Haplogroup,
+};
+
+export function TypeaheadSearch({
   entityType,
   onSelect,
-  onCreate,
   placeholder = `Search for ${entityType}...`,
   label,
-  formatResult,
-  searchEndpoint,
-  debounceMs = 200,
+  debounceMs = 250,
   minChars = 2,
   maxResults = 10,
-  initialValue,
+  selectedValue,
+  onClear,
   disabled = false,
   error,
-}: TypeaheadSearchProps<T>) {
+  excludeIds = [],
+}: TypeaheadSearchProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<T[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedValue, setSelectedValue] = useState<T | undefined>(initialValue);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced search function with request cancellation
-  const searchEntities = useCallback(
-    debounce(async (searchQuery: string) => {
-      if (searchQuery.length < minChars) {
-        setResults([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        let data: T[] = [];
-
-        // Use the appropriate API method based on entity type
-        switch (entityType) {
-          case 'person':
-            data = await peopleAPI.search(searchQuery) as unknown as T[];
-            break;
-          case 'participant':
-            data = await participantsAPI.search(searchQuery, maxResults) as unknown as T[];
-            break;
-          case 'place':
-            data = await placesAPI.search(searchQuery) as unknown as T[];
-            break;
-          case 'lineage':
-            data = await lineagesAPI.search(searchQuery, maxResults) as unknown as T[];
-            break;
-          case 'haplogroup':
-            data = await haplogroupsAPI.search(searchQuery, maxResults) as unknown as T[];
-            break;
-          default:
-            // If custom endpoint is provided, use fetch
-            if (searchEndpoint) {
-              const response = await fetch(
-                `${searchEndpoint}?q=${encodeURIComponent(searchQuery)}&limit=${maxResults}`
-              );
-              data = await response.json();
-            }
-        }
-
-        setResults(data.slice(0, maxResults));
-      } catch (error: any) {
-        console.error('Search error:', error);
-        setResults([]);
-      } finally {
-        setLoading(false);
-      }
-    }, debounceMs),
-    [entityType, searchEndpoint, debounceMs, minChars, maxResults]
-  );
-
-  // Trigger search on query change
+  // Debounce input → query
   useEffect(() => {
-    if (query.length > 0) {
-      setLoading(true);
-      searchEntities(query);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (inputValue.length >= minChars) {
+      timerRef.current = setTimeout(() => setDebouncedQuery(inputValue), debounceMs);
     } else {
-      setResults([]);
-      setLoading(false);
+      setDebouncedQuery('');
     }
-  }, [query, searchEntities]);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [inputValue, minChars, debounceMs]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
+  const searchType = ENTITY_TO_SEARCH_TYPE[entityType];
 
-  // Handle selection
-  const handleSelect = (entity: T) => {
-    setSelectedValue(entity);
-    onSelect(entity);
+  const [{ data, fetching }] = useSearchQuery({
+    variables: {
+      query: debouncedQuery,
+      types: searchType ? [searchType] : null,
+      limit: maxResults,
+    },
+    pause: debouncedQuery.length < minChars,
+  });
+
+  const results: SearchResult[] = (data?.search?.items ?? [])
+    .filter((item) => !excludeIds.includes(item.id))
+    .map((item) => ({
+      id: item.id,
+      display: item.display,
+      resultType: item.resultType,
+    }));
+
+  const handleSelect = useCallback((result: SearchResult) => {
+    onSelect(result);
     setOpen(false);
-    setQuery('');
-  };
+    setInputValue('');
+    setDebouncedQuery('');
+  }, [onSelect]);
 
-  // Handle clear
-  const handleClear = (e: React.MouseEvent) => {
+  const handleClear = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedValue(undefined);
-    setQuery('');
-    setResults([]);
-  };
-
-  // Handle create new
-  const handleCreate = () => {
-    if (onCreate) {
-      onCreate();
-      setOpen(false);
-    }
-  };
-
-  // Update selected value when initialValue changes
-  useEffect(() => {
-    setSelectedValue(initialValue);
-  }, [initialValue]);
+    onClear?.();
+    setInputValue('');
+    setDebouncedQuery('');
+  }, [onClear]);
 
   return (
     <div className="space-y-2">
@@ -177,13 +112,11 @@ export function TypeaheadSearch<T extends { id: string }>({
             className={`w-full justify-between ${error ? 'border-red-500' : ''}`}
           >
             {selectedValue ? (
-              <span className="flex items-center gap-2 truncate">
-                {formatResult(selectedValue).primary}
-              </span>
+              <span className="truncate">{selectedValue.display}</span>
             ) : (
               <span className="text-muted-foreground">{placeholder}</span>
             )}
-            {selectedValue ? (
+            {selectedValue && onClear ? (
               <X
                 className="ml-2 h-4 w-4 shrink-0 opacity-50 hover:opacity-100"
                 onClick={handleClear}
@@ -198,12 +131,11 @@ export function TypeaheadSearch<T extends { id: string }>({
           <Command shouldFilter={false}>
             <CommandInput
               placeholder={placeholder}
-              value={query}
-              onValueChange={setQuery}
+              value={inputValue}
+              onValueChange={setInputValue}
             />
-
             <CommandList>
-              {loading && (
+              {fetching && (
                 <CommandEmpty>
                   <div className="flex items-center justify-center py-6">
                     <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -212,7 +144,7 @@ export function TypeaheadSearch<T extends { id: string }>({
                 </CommandEmpty>
               )}
 
-              {!loading && query.length > 0 && query.length < minChars && (
+              {!fetching && inputValue.length > 0 && inputValue.length < minChars && (
                 <CommandEmpty>
                   <div className="py-6 text-center text-sm text-muted-foreground">
                     Type at least {minChars} characters to search
@@ -220,7 +152,7 @@ export function TypeaheadSearch<T extends { id: string }>({
                 </CommandEmpty>
               )}
 
-              {!loading && query.length >= minChars && results.length === 0 && (
+              {!fetching && debouncedQuery.length >= minChars && results.length === 0 && (
                 <CommandEmpty>
                   <div className="py-6 text-center text-sm text-muted-foreground">
                     <Search className="mx-auto h-6 w-6 mb-2 opacity-50" />
@@ -231,45 +163,16 @@ export function TypeaheadSearch<T extends { id: string }>({
 
               {results.length > 0 && (
                 <CommandGroup heading="Results">
-                  {results.map((entity) => {
-                    const formatted = formatResult(entity);
-                    return (
-                      <CommandItem
-                        key={entity.id}
-                        value={entity.id}
-                        onSelect={() => handleSelect(entity)}
-                        className="cursor-pointer"
-                      >
-                        <div className="flex items-start gap-3 w-full">
-                          {formatted.avatar && (
-                            <div className="mt-0.5 flex-shrink-0">
-                              {formatted.avatar}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium truncate">{formatted.primary}</div>
-                            {formatted.secondary && (
-                              <div className="text-sm text-muted-foreground truncate">
-                                {formatted.secondary}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              )}
-
-              {onCreate && query.length >= minChars && (
-                <CommandGroup>
-                  <CommandItem
-                    onSelect={handleCreate}
-                    className="cursor-pointer text-blue-600 dark:text-blue-400"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create New {entityType.charAt(0).toUpperCase() + entityType.slice(1)}
-                  </CommandItem>
+                  {results.map((result) => (
+                    <CommandItem
+                      key={result.id}
+                      value={result.id}
+                      onSelect={() => handleSelect(result)}
+                      className="cursor-pointer"
+                    >
+                      <div className="font-medium truncate">{result.display}</div>
+                    </CommandItem>
+                  ))}
                 </CommandGroup>
               )}
             </CommandList>

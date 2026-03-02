@@ -92,6 +92,12 @@ type Person {
   notes: String
   createdDate: String
   updatedDate: String
+  # Relationship resolvers
+  parents: [PersonRelationship!]!
+  children: [Person!]!
+  spouses: [SpouseRelationship!]!
+  lineageAssignments: [LineageAssignment!]!
+  adminNotes: [AdminNote!]!
 }
 
 type Participant {
@@ -106,6 +112,14 @@ type Participant {
   researchGoal: String
   createdDate: String
   updatedDate: String
+  # Relationship resolvers
+  linkedPerson: Person
+  dnaTests: [DnaTest!]!
+  onlineTrees: [OnlineTree!]!
+  haplogroups: [Haplogroup!]!
+  lineageMemberships: [LineageMembership!]!
+  geneticMatches: [GeneticMatchEntry!]!
+  adminNotes: [AdminNote!]!
 }
 
 type Place {
@@ -153,6 +167,40 @@ type AdminNote {
   text: String!
   createdDate: String
   resolved: Boolean!
+}
+
+# ── Relationship Wrapper Types ─────────────────────────────────────
+
+type PersonRelationship {
+  person: Person!
+  relationshipType: String
+}
+
+type SpouseRelationship {
+  spouse: Person!
+  marriageDate: String
+  marriagePlace: String
+  marriageOrder: Int
+  spouseSurname: String
+}
+
+type LineageAssignment {
+  lineage: Lineage!
+  role: String
+  generationNumber: Int
+  certainty: String
+}
+
+type LineageMembership {
+  lineage: Lineage!
+  branchLabel: String
+}
+
+type GeneticMatchEntry {
+  participant: Participant!
+  markerLevel: Int
+  matchType: String
+  notes: String
 }
 
 # ── Connections (Pagination) ────────────────────────────────────────
@@ -230,7 +278,9 @@ type Query {
   stats: Stats!
 
   # Admin (auth required, full data)
+  adminPersons(surname: String, includePlaceholders: Boolean, offset: Int = 0, limit: Int = 50): PersonConnection!
   adminPerson(id: String!): Person
+  adminParticipants(activeOnly: Boolean, offset: Int = 0, limit: Int = 50): ParticipantConnection!
   adminParticipant(id: String!): Participant
   adminNotes(color: String, resolved: Boolean, offset: Int = 0, limit: Int = 50): AdminNoteConnection!
 }

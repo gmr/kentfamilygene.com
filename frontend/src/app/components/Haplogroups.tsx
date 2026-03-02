@@ -17,7 +17,7 @@ import { Badge } from './ui/badge';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useHaplogroupsQuery,
@@ -42,15 +42,14 @@ export function Haplogroups() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingHaplogroup, setEditingHaplogroup] = useState<Haplogroup | null>(null);
 
-  const [{ data, fetching, error }, refetchHaplogroups] = useHaplogroupsQuery({
-    variables: { offset: 0, limit: 200 },
-  });
+  const [{ data, fetching, error }, refetchHaplogroups] = useHaplogroupsQuery();
 
   const [, createHaplogroup] = useCreateHaplogroupMutation();
   const [, updateHaplogroup] = useUpdateHaplogroupMutation();
   const [, deleteHaplogroup] = useDeleteHaplogroupMutation();
 
   const haplogroups = data?.haplogroups?.items ?? [];
+  const total = data?.haplogroups?.total ?? 0;
 
   const filtered = useMemo(() => {
     if (!searchQuery) return haplogroups;
@@ -224,12 +223,11 @@ export function Haplogroups() {
                 <TableHead>Subclade</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((haplogroup) => (
-                <TableRow key={haplogroup.id}>
+                <TableRow key={haplogroup.id} className="cursor-pointer" onClick={() => setEditingHaplogroup(haplogroup)}>
                   <TableCell className="font-medium">{haplogroup.abbreviation}</TableCell>
                   <TableCell>{haplogroup.name}</TableCell>
                   <TableCell>{haplogroup.subclade || '\u2014'}</TableCell>
@@ -245,23 +243,13 @@ export function Haplogroups() {
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Edit"
-                      onClick={() => setEditingHaplogroup(haplogroup)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
 
-          <div className="p-4 border-t bg-muted/20 text-sm text-muted-foreground">
-            Showing {filtered.length} haplogroup{filtered.length !== 1 ? 's' : ''}
+          <div className="p-4 border-t bg-muted/20 text-sm text-muted-foreground text-right">
+            Showing {filtered.length} of {total} haplogroups
           </div>
         </div>
       )}

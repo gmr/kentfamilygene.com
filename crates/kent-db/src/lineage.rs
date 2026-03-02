@@ -83,18 +83,15 @@ pub async fn create_lineage(graph: &Graph, row: &LineageRow) -> Result<LineageRo
             .to_string(),
     )
     .param("id", row.id.clone())
-    .param("origin_state", row.origin_state.clone().unwrap_or_default())
-    .param("lineage_number", row.lineage_number.unwrap_or(0))
+    .param("origin_state", row.origin_state.clone())
+    .param("lineage_number", row.lineage_number)
     .param("display_name", row.display_name.clone())
-    .param("region", row.region.clone().unwrap_or_default())
-    .param("status_note", row.status_note.clone().unwrap_or_default())
+    .param("region", row.region.clone())
+    .param("status_note", row.status_note.clone())
     .param("is_new", row.is_new)
-    .param(
-        "new_lineage_date",
-        row.new_lineage_date.clone().unwrap_or_default(),
-    )
-    .param("created_date", row.created_date.clone().unwrap_or_default())
-    .param("updated_date", row.updated_date.clone().unwrap_or_default());
+    .param("new_lineage_date", row.new_lineage_date.clone())
+    .param("created_date", row.created_date.clone())
+    .param("updated_date", row.updated_date.clone());
 
     let mut result = graph.execute(query).await?;
     let row = result
@@ -121,17 +118,14 @@ pub async fn update_lineage(
             .to_string(),
     )
     .param("id", id)
-    .param("origin_state", row.origin_state.clone().unwrap_or_default())
-    .param("lineage_number", row.lineage_number.unwrap_or(0))
+    .param("origin_state", row.origin_state.clone())
+    .param("lineage_number", row.lineage_number)
     .param("display_name", row.display_name.clone())
-    .param("region", row.region.clone().unwrap_or_default())
-    .param("status_note", row.status_note.clone().unwrap_or_default())
+    .param("region", row.region.clone())
+    .param("status_note", row.status_note.clone())
     .param("is_new", row.is_new)
-    .param(
-        "new_lineage_date",
-        row.new_lineage_date.clone().unwrap_or_default(),
-    )
-    .param("updated_date", row.updated_date.clone().unwrap_or_default());
+    .param("new_lineage_date", row.new_lineage_date.clone())
+    .param("updated_date", row.updated_date.clone());
 
     let mut result = graph.execute(query).await?;
     if let Some(r) = result.next().await? {
@@ -179,17 +173,22 @@ pub async fn delete_lineage(graph: &Graph, id: &str) -> Result<bool, Error> {
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_lineage_row(node: &neo4rs::Node) -> LineageRow {
     LineageRow {
         id: node.get("id").unwrap_or_default(),
-        origin_state: node.get("origin_state").ok(),
+        origin_state: non_empty(node, "origin_state"),
         lineage_number: node.get("lineage_number").ok(),
         display_name: node.get("display_name").unwrap_or_default(),
-        region: node.get("region").ok(),
-        status_note: node.get("status_note").ok(),
+        region: non_empty(node, "region"),
+        status_note: non_empty(node, "status_note"),
         is_new: node.get("is_new").unwrap_or(false),
-        new_lineage_date: node.get("new_lineage_date").ok(),
-        created_date: node.get("created_date").ok(),
-        updated_date: node.get("updated_date").ok(),
+        new_lineage_date: non_empty(node, "new_lineage_date"),
+        created_date: non_empty(node, "created_date"),
+        updated_date: non_empty(node, "updated_date"),
     }
 }

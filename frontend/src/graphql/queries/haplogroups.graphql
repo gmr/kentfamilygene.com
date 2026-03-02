@@ -1,5 +1,5 @@
-query Haplogroups($haplogroupType: String, $offset: Int, $limit: Int) {
-  haplogroups(haplogroupType: $haplogroupType, offset: $offset, limit: $limit) {
+query Haplogroups($haplogroupType: String) {
+  haplogroups(haplogroupType: $haplogroupType) {
     items {
       id
       name

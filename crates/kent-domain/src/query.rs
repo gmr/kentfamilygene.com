@@ -17,10 +17,10 @@ impl QueryRoot {
         ctx: &Context<'_>,
         region: Option<String>,
         #[graphql(default = 0)] offset: i32,
-        #[graphql(default = 50)] limit: i32,
+        #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<LineageConnection> {
         let graph = ctx.data::<Graph>()?;
-        let limit = limit.clamp(1, 200) as i64;
+        let limit = limit.clamp(1, 10000) as i64;
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
@@ -54,10 +54,10 @@ impl QueryRoot {
         ctx: &Context<'_>,
         surname: Option<String>,
         #[graphql(default = 0)] offset: i32,
-        #[graphql(default = 50)] limit: i32,
+        #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<PersonConnection> {
         let graph = ctx.data::<Graph>()?;
-        let limit = limit.clamp(1, 200) as i64;
+        let limit = limit.clamp(1, 10000) as i64;
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
@@ -92,10 +92,10 @@ impl QueryRoot {
         ctx: &Context<'_>,
         active_only: Option<bool>,
         #[graphql(default = 0)] offset: i32,
-        #[graphql(default = 50)] limit: i32,
+        #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<ParticipantConnection> {
         let graph = ctx.data::<Graph>()?;
-        let limit = limit.clamp(1, 200) as i64;
+        let limit = limit.clamp(1, 10000) as i64;
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
@@ -134,10 +134,10 @@ impl QueryRoot {
         ctx: &Context<'_>,
         haplogroup_type: Option<String>,
         #[graphql(default = 0)] offset: i32,
-        #[graphql(default = 50)] limit: i32,
+        #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<HaplogroupConnection> {
         let graph = ctx.data::<Graph>()?;
-        let limit = limit.clamp(1, 200) as i64;
+        let limit = limit.clamp(1, 10000) as i64;
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
@@ -160,10 +160,10 @@ impl QueryRoot {
         ctx: &Context<'_>,
         country: Option<String>,
         #[graphql(default = 0)] offset: i32,
-        #[graphql(default = 50)] limit: i32,
+        #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<PlaceConnection> {
         let graph = ctx.data::<Graph>()?;
-        let limit = limit.clamp(1, 200) as i64;
+        let limit = limit.clamp(1, 10000) as i64;
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
@@ -228,6 +228,43 @@ impl QueryRoot {
 
     // ── Admin queries (auth required, unmasked data) ───────────────
 
+    /// List persons (admin, unmasked).
+    async fn admin_persons(
+        &self,
+        ctx: &Context<'_>,
+        surname: Option<String>,
+        include_placeholders: Option<bool>,
+        #[graphql(default = 0)] offset: i32,
+        #[graphql(default = 10000)] limit: i32,
+    ) -> async_graphql::Result<PersonConnection> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let limit = limit.clamp(1, 10000) as i64;
+        let offset = offset.max(0) as i64;
+
+        let (rows, total) = if include_placeholders.unwrap_or(false) {
+            kent_db::find_all_persons_including_placeholders(
+                graph,
+                surname.as_deref(),
+                offset,
+                limit,
+            )
+            .await?
+        } else {
+            kent_db::find_all_persons(graph, surname.as_deref(), offset, limit).await?
+        };
+
+        let items: Vec<Person> = rows.into_iter().map(Person::from).collect();
+        let total = total as i32;
+        let has_more = (offset + limit) < total as i64;
+
+        Ok(PersonConnection {
+            items,
+            total,
+            has_more,
+        })
+    }
+
     /// Fetch a single person by ID (admin, unmasked).
     async fn admin_person(
         &self,
@@ -238,6 +275,33 @@ impl QueryRoot {
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::find_person_by_id(graph, &id).await?;
         Ok(row.map(Person::from))
+    }
+
+    /// List participants (admin, unmasked).
+    async fn admin_participants(
+        &self,
+        ctx: &Context<'_>,
+        active_only: Option<bool>,
+        #[graphql(default = 0)] offset: i32,
+        #[graphql(default = 10000)] limit: i32,
+    ) -> async_graphql::Result<ParticipantConnection> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let limit = limit.clamp(1, 10000) as i64;
+        let offset = offset.max(0) as i64;
+
+        let (rows, total) =
+            kent_db::find_all_participants(graph, active_only, offset, limit).await?;
+
+        let items: Vec<Participant> = rows.into_iter().map(Participant::from).collect();
+        let total = total as i32;
+        let has_more = (offset + limit) < total as i64;
+
+        Ok(ParticipantConnection {
+            items,
+            total,
+            has_more,
+        })
     }
 
     /// Fetch a single participant by ID (admin, unmasked).
@@ -259,11 +323,11 @@ impl QueryRoot {
         color: Option<String>,
         resolved: Option<bool>,
         #[graphql(default = 0)] offset: i32,
-        #[graphql(default = 50)] limit: i32,
+        #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<AdminNoteConnection> {
         require_auth(ctx)?;
         let graph = ctx.data::<Graph>()?;
-        let limit = limit.clamp(1, 200) as i64;
+        let limit = limit.clamp(1, 10000) as i64;
         let offset = offset.max(0) as i64;
 
         let (rows, total) =

@@ -21,5 +21,24 @@ query AdminPerson($id: String!) {
     notes
     createdDate
     updatedDate
+    parents {
+      person { id givenName surname privacyLabel }
+      relationshipType
+    }
+    children { id givenName surname privacyLabel birthDateSort }
+    spouses {
+      spouse { id givenName surname privacyLabel }
+      marriageDate
+      marriagePlace
+      marriageOrder
+      spouseSurname
+    }
+    lineageAssignments {
+      lineage { id displayName region }
+      role
+      generationNumber
+      certainty
+    }
+    adminNotes { id color text createdDate resolved }
   }
 }

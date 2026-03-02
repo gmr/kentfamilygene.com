@@ -8,6 +8,7 @@ pub mod online_tree;
 pub mod participant;
 pub mod person;
 pub mod place;
+pub mod relationships;
 
 pub use admin_note::*;
 pub use connection::*;
@@ -19,3 +20,4 @@ pub use online_tree::*;
 pub use participant::*;
 pub use person::*;
 pub use place::*;
+pub use relationships::*;

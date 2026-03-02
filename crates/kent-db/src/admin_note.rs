@@ -84,9 +84,9 @@ pub async fn create_admin_note(graph: &Graph, row: &AdminNoteRow) -> Result<Admi
             .to_string(),
     )
     .param("id", row.id.clone())
-    .param("color", row.color.clone().unwrap_or_default())
+    .param("color", row.color.clone())
     .param("text", row.text.clone())
-    .param("created_date", row.created_date.clone().unwrap_or_default())
+    .param("created_date", row.created_date.clone())
     .param("resolved", row.resolved);
 
     let mut result = graph.execute(query).await?;
@@ -110,7 +110,7 @@ pub async fn update_admin_note(
             .to_string(),
     )
     .param("id", id)
-    .param("color", row.color.clone().unwrap_or_default())
+    .param("color", row.color.clone())
     .param("text", row.text.clone())
     .param("resolved", row.resolved);
 
@@ -171,12 +171,17 @@ pub async fn attach_admin_note(
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_admin_note_row(node: &neo4rs::Node) -> AdminNoteRow {
     AdminNoteRow {
         id: node.get("id").unwrap_or_default(),
-        color: node.get("color").ok(),
+        color: non_empty(node, "color"),
         text: node.get("text").unwrap_or_default(),
-        created_date: node.get("created_date").ok(),
+        created_date: non_empty(node, "created_date"),
         resolved: node.get("resolved").unwrap_or(false),
     }
 }

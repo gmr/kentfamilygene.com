@@ -1,0 +1,3 @@
+mutation LinkParticipantToPerson($participantId: String!, $personId: String!) {
+  linkParticipantToPerson(participantId: $participantId, personId: $personId)
+}

@@ -21,20 +21,28 @@ export function getAuthHeader(): string | null {
   return _authHeader;
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [credentials, setCredentials] = useState<AuthState | null>(() => {
-    const stored = sessionStorage.getItem('kent-auth');
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch {
-        return null;
-      }
+function restoreCredentials(): AuthState | null {
+  const stored = sessionStorage.getItem('kent-auth');
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return null;
     }
-    return null;
-  });
+  }
+  return null;
+}
 
-  // Keep the module-level ref in sync
+// Eagerly initialize auth header so it's available before first render
+const _initialCredentials = restoreCredentials();
+if (_initialCredentials) {
+  _authHeader = 'Basic ' + btoa(`${_initialCredentials.username}:${_initialCredentials.password}`);
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [credentials, setCredentials] = useState<AuthState | null>(_initialCredentials);
+
+  // Keep the module-level ref in sync on subsequent changes
   useEffect(() => {
     if (credentials) {
       _authHeader = 'Basic ' + btoa(`${credentials.username}:${credentials.password}`);

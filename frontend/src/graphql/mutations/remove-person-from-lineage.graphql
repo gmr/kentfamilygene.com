@@ -1,0 +1,3 @@
+mutation RemovePersonFromLineage($personId: String!, $lineageId: String!) {
+  removePersonFromLineage(personId: $personId, lineageId: $lineageId)
+}

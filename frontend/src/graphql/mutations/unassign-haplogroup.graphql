@@ -1,0 +1,3 @@
+mutation UnassignHaplogroup($participantId: String!, $haplogroupId: String!) {
+  unassignHaplogroup(participantId: $participantId, haplogroupId: $haplogroupId)
+}

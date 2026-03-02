@@ -11,5 +11,20 @@ query AdminParticipant($id: String!) {
     researchGoal
     createdDate
     updatedDate
+    linkedPerson { id givenName surname }
+    dnaTests { id testType testName provider kitNumber markerCount registeredWithProject gedmatchKit }
+    onlineTrees { id platform username treeName url }
+    haplogroups { id name subclade abbreviation haplogroupType }
+    lineageMemberships {
+      lineage { id displayName region }
+      branchLabel
+    }
+    geneticMatches {
+      participant { id displayName ftdnaKitNumber }
+      markerLevel
+      matchType
+      notes
+    }
+    adminNotes { id color text createdDate resolved }
   }
 }

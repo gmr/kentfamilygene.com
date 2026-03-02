@@ -1,0 +1,3 @@
+mutation RecordGeneticMatch($participant1Id: String!, $participant2Id: String!, $input: GeneticMatchInput!) {
+  recordGeneticMatch(participant1Id: $participant1Id, participant2Id: $participant2Id, input: $input)
+}

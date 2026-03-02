@@ -1,6 +1,10 @@
-use async_graphql::SimpleObject;
+use async_graphql::{ComplexObject, Context, SimpleObject};
+use kent_db::Neo4jGraph as Graph;
+
+use super::{AdminNote, LineageAssignment, PersonRelationship, SpouseRelationship};
 
 #[derive(SimpleObject, Debug, Clone)]
+#[graphql(complex)]
 pub struct Person {
     pub id: String,
     pub given_name: String,
@@ -23,6 +27,72 @@ pub struct Person {
     pub notes: Option<String>,
     pub created_date: Option<String>,
     pub updated_date: Option<String>,
+}
+
+#[ComplexObject]
+impl Person {
+    async fn parents(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<PersonRelationship>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::relationship::find_parents_of(graph, &self.id).await?;
+        Ok(rows
+            .into_iter()
+            .map(|(p, rel_type)| PersonRelationship {
+                person: Person::from(p),
+                relationship_type: rel_type,
+            })
+            .collect())
+    }
+
+    async fn children(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Person>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::relationship::find_children_of(graph, &self.id).await?;
+        Ok(rows.into_iter().map(Person::from).collect())
+    }
+
+    async fn spouses(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<SpouseRelationship>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::relationship::find_spouses_of(graph, &self.id).await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(spouse, marriage_date, marriage_place, marriage_order, spouse_surname)| {
+                    SpouseRelationship {
+                        spouse: Person::from(spouse),
+                        marriage_date,
+                        marriage_place,
+                        marriage_order: marriage_order.and_then(|n| i32::try_from(n).ok()),
+                        spouse_surname,
+                    }
+                },
+            )
+            .collect())
+    }
+
+    async fn lineage_assignments(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<Vec<LineageAssignment>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::relationship::find_lineages_of_person(graph, &self.id).await?;
+        Ok(rows
+            .into_iter()
+            .map(|(l, role, gen_num, certainty)| {
+                use super::Lineage;
+                LineageAssignment {
+                    lineage: Lineage::from(l),
+                    role,
+                    generation_number: gen_num.and_then(|n| i32::try_from(n).ok()),
+                    certainty,
+                }
+            })
+            .collect())
+    }
+
+    async fn admin_notes(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<AdminNote>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::relationship::find_admin_notes_for_entity(graph, &self.id).await?;
+        Ok(rows.into_iter().map(AdminNote::from).collect())
+    }
 }
 
 impl From<kent_db::PersonRow> for Person {

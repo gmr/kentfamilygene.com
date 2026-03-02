@@ -28,30 +28,37 @@ export function GenealogyDateInput({ value, modifier, onChange, label }: Genealo
   const [dateModifier, setDateModifier] = useState<DateModifier>(modifier);
 
   useEffect(() => {
+    const parsed = parseDateString(value);
+    setDateValue(parsed.cleanDate);
     if (value) {
-      const parsed = parseDateString(value);
-      setDateValue(parsed.cleanDate);
       setDateModifier(parsed.modifier);
     }
-  }, []);
+  }, [value]);
 
   const parseDateString = (dateStr: string): { cleanDate: string; modifier: DateModifier } => {
-    const upper = dateStr.trim().toUpperCase();
+    const lower = dateStr.trim().toLowerCase();
 
-    if (upper.startsWith('ABT ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'ABOUT' };
+    // Handle various genealogical date prefixes
+    if (/^(abt\.?|about)\s/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^(abt\.?|about)\s+/i, '').trim(), modifier: 'ABOUT' };
     }
-    if (upper.startsWith('BEF ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'BEFORE' };
+    if (/^(ca\.?|circa)\s?/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^(ca\.?|circa)\s?/i, '').trim(), modifier: 'ABOUT' };
     }
-    if (upper.startsWith('AFT ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'AFTER' };
+    if (/^(bef\.?|before)\s/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^(bef\.?|before)\s+/i, '').trim(), modifier: 'BEFORE' };
     }
-    if (upper.startsWith('CAL ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'CALCULATED' };
+    if (/^(aft\.?|after)\s/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^(aft\.?|after)\s+/i, '').trim(), modifier: 'AFTER' };
     }
-    if (upper.startsWith('PROB ')) {
-      return { cleanDate: dateStr.substring(5).trim(), modifier: 'PROBABLY' };
+    if (/^(cal\.?|calculated)\s/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^(cal\.?|calculated)\s+/i, '').trim(), modifier: 'CALCULATED' };
+    }
+    if (/^(prob\.?\s?bet\.?|probably)\s/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^(prob\.?\s?bet\.?|probably)\s+/i, '').trim(), modifier: 'PROBABLY' };
+    }
+    if (/^bet\.?\s/i.test(lower)) {
+      return { cleanDate: dateStr.replace(/^bet\.?\s+/i, '').trim(), modifier: 'PROBABLY' };
     }
 
     return { cleanDate: dateStr, modifier: 'EXACT' };

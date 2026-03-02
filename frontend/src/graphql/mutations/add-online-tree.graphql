@@ -1,0 +1,9 @@
+mutation AddOnlineTree($participantId: String!, $input: CreateOnlineTreeInput!) {
+  addOnlineTree(participantId: $participantId, input: $input) {
+    id
+    platform
+    username
+    treeName
+    url
+  }
+}

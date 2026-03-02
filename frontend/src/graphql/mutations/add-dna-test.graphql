@@ -1,0 +1,12 @@
+mutation AddDnaTest($participantId: String!, $input: CreateDnaTestInput!) {
+  addDnaTest(participantId: $participantId, input: $input) {
+    id
+    testType
+    testName
+    provider
+    kitNumber
+    markerCount
+    registeredWithProject
+    gedmatchKit
+  }
+}

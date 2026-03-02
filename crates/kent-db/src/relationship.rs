@@ -1,6 +1,11 @@
 use neo4rs::{Graph, Query};
 
-use crate::Error;
+use crate::admin_note::node_to_admin_note_row;
+use crate::haplogroup::node_to_haplogroup_row;
+use crate::lineage::node_to_lineage_row;
+use crate::participant::node_to_participant_row;
+use crate::person::node_to_person_row;
+use crate::{AdminNoteRow, Error, HaplogroupRow, LineageRow, ParticipantRow, PersonRow};
 
 // ── Person ↔ Lineage (BELONGS_TO) ──────────────────────────────────
 
@@ -405,4 +410,234 @@ pub async fn remove_migration_stop(
     } else {
         Ok(false)
     }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Relationship READ functions
+// ══════════════════════════════════════════════════════════════════
+
+/// Parents of a person (via PARENT_OF edges pointing to this person).
+pub async fn find_parents_of(
+    graph: &Graph,
+    person_id: &str,
+) -> Result<Vec<(PersonRow, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (p:Person {id: $id})<-[r:PARENT_OF]-(parent:Person) \
+         RETURN parent, r.relationship_type AS rel_type"
+            .to_string(),
+    )
+    .param("id", person_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("parent")?;
+        let rel_type: Option<String> = row.get("rel_type").ok();
+        out.push((node_to_person_row(&node), rel_type));
+    }
+    Ok(out)
+}
+
+/// Children of a person (via PARENT_OF edges from this person).
+pub async fn find_children_of(graph: &Graph, person_id: &str) -> Result<Vec<PersonRow>, Error> {
+    let query = Query::new(
+        "MATCH (p:Person {id: $id})-[:PARENT_OF]->(child:Person) \
+         RETURN child ORDER BY child.birth_date_sort"
+            .to_string(),
+    )
+    .param("id", person_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("child")?;
+        out.push(node_to_person_row(&node));
+    }
+    Ok(out)
+}
+
+/// Spouses of a person (undirected SPOUSE_OF edges).
+pub async fn find_spouses_of(
+    graph: &Graph,
+    person_id: &str,
+) -> Result<
+    Vec<(
+        PersonRow,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    )>,
+    Error,
+> {
+    let query = Query::new(
+        "MATCH (p:Person {id: $id})-[r:SPOUSE_OF]-(spouse:Person) \
+         RETURN spouse, r.marriage_date AS marriage_date, \
+                r.marriage_place AS marriage_place, \
+                r.marriage_order AS marriage_order, \
+                r.spouse_surname AS spouse_surname \
+         ORDER BY r.marriage_order"
+            .to_string(),
+    )
+    .param("id", person_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("spouse")?;
+        let marriage_date: Option<String> = row.get("marriage_date").ok();
+        let marriage_place: Option<String> = row.get("marriage_place").ok();
+        let marriage_order: Option<i64> = row.get("marriage_order").ok();
+        let spouse_surname: Option<String> = row.get("spouse_surname").ok();
+        out.push((
+            node_to_person_row(&node),
+            marriage_date,
+            marriage_place,
+            marriage_order,
+            spouse_surname,
+        ));
+    }
+    Ok(out)
+}
+
+/// Lineages a person belongs to (via BELONGS_TO edges).
+pub async fn find_lineages_of_person(
+    graph: &Graph,
+    person_id: &str,
+) -> Result<Vec<(LineageRow, Option<String>, Option<i64>, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (p:Person {id: $id})-[r:BELONGS_TO]->(l:Lineage) \
+         RETURN l, r.role AS role, r.generation_number AS gen, r.certainty AS certainty \
+         ORDER BY l.display_name"
+            .to_string(),
+    )
+    .param("id", person_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("l")?;
+        let role: Option<String> = row.get("role").ok();
+        let generation: Option<i64> = row.get("gen").ok();
+        let certainty: Option<String> = row.get("certainty").ok();
+        out.push((node_to_lineage_row(&node), role, generation, certainty));
+    }
+    Ok(out)
+}
+
+/// The person linked to a participant (via IDENTITY_OF).
+pub async fn find_person_for_participant(
+    graph: &Graph,
+    participant_id: &str,
+) -> Result<Option<PersonRow>, Error> {
+    let query = Query::new(
+        "MATCH (p:Participant {id: $id})-[:IDENTITY_OF]->(person:Person) \
+         RETURN person"
+            .to_string(),
+    )
+    .param("id", participant_id);
+
+    let mut result = graph.execute(query).await?;
+    if let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("person")?;
+        Ok(Some(node_to_person_row(&node)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Lineages a participant researches (via RESEARCHES edges).
+pub async fn find_lineages_of_participant(
+    graph: &Graph,
+    participant_id: &str,
+) -> Result<Vec<(LineageRow, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (p:Participant {id: $id})-[r:RESEARCHES]->(l:Lineage) \
+         RETURN l, r.branch_label AS branch_label \
+         ORDER BY l.display_name"
+            .to_string(),
+    )
+    .param("id", participant_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("l")?;
+        let branch: Option<String> = row.get("branch_label").ok();
+        out.push((node_to_lineage_row(&node), branch));
+    }
+    Ok(out)
+}
+
+/// Haplogroups assigned to a participant (via HAS_HAPLOGROUP edges).
+pub async fn find_haplogroups_of_participant(
+    graph: &Graph,
+    participant_id: &str,
+) -> Result<Vec<HaplogroupRow>, Error> {
+    let query = Query::new(
+        "MATCH (p:Participant {id: $id})-[:HAS_HAPLOGROUP]->(h:Haplogroup) \
+         RETURN h ORDER BY h.name"
+            .to_string(),
+    )
+    .param("id", participant_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("h")?;
+        out.push(node_to_haplogroup_row(&node));
+    }
+    Ok(out)
+}
+
+/// Genetic matches for a participant (undirected GENETIC_MATCH edges).
+pub async fn find_genetic_matches_of_participant(
+    graph: &Graph,
+    participant_id: &str,
+) -> Result<Vec<(ParticipantRow, Option<i64>, Option<String>, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (p:Participant {id: $id})-[r:GENETIC_MATCH]-(other:Participant) \
+         RETURN other, r.marker_level AS marker_level, \
+                r.match_type AS match_type, r.notes AS notes \
+         ORDER BY other.display_name"
+            .to_string(),
+    )
+    .param("id", participant_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("other")?;
+        let marker_level: Option<i64> = row.get("marker_level").ok();
+        let match_type: Option<String> = row.get("match_type").ok();
+        let notes: Option<String> = row.get("notes").ok();
+        out.push((
+            node_to_participant_row(&node),
+            marker_level,
+            match_type,
+            notes,
+        ));
+    }
+    Ok(out)
+}
+
+/// Admin notes attached to any entity (via ANNOTATES edges).
+pub async fn find_admin_notes_for_entity(
+    graph: &Graph,
+    entity_id: &str,
+) -> Result<Vec<AdminNoteRow>, Error> {
+    let query = Query::new(
+        "MATCH (n:AdminNote)-[:ANNOTATES]->(e {id: $id}) \
+         RETURN n ORDER BY n.created_date DESC"
+            .to_string(),
+    )
+    .param("id", entity_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("n")?;
+        out.push(node_to_admin_note_row(&node));
+    }
+    Ok(out)
 }

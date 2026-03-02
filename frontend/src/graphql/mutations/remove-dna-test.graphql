@@ -1,0 +1,3 @@
+mutation RemoveDnaTest($testId: String!) {
+  removeDnaTest(testId: $testId)
+}

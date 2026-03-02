@@ -1,0 +1,3 @@
+mutation RemoveGeneticMatch($participant1Id: String!, $participant2Id: String!) {
+  removeGeneticMatch(participant1Id: $participant1Id, participant2Id: $participant2Id)
+}

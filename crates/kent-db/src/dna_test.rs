@@ -54,13 +54,13 @@ pub async fn create_dna_test(
     )
     .param("participant_id", participant_id)
     .param("id", row.id.clone())
-    .param("test_type", row.test_type.clone().unwrap_or_default())
-    .param("test_name", row.test_name.clone().unwrap_or_default())
-    .param("provider", row.provider.clone().unwrap_or_default())
-    .param("kit_number", row.kit_number.clone().unwrap_or_default())
-    .param("marker_count", row.marker_count.unwrap_or(0))
+    .param("test_type", row.test_type.clone())
+    .param("test_name", row.test_name.clone())
+    .param("provider", row.provider.clone())
+    .param("kit_number", row.kit_number.clone())
+    .param("marker_count", row.marker_count)
     .param("registered_with_project", row.registered_with_project)
-    .param("gedmatch_kit", row.gedmatch_kit.clone().unwrap_or_default());
+    .param("gedmatch_kit", row.gedmatch_kit.clone());
 
     let mut result = graph.execute(query).await?;
     let r = result.next().await?.ok_or(Error::Deserialization(
@@ -83,15 +83,20 @@ pub async fn delete_dna_test(graph: &Graph, id: &str) -> Result<bool, Error> {
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_dna_test_row(node: &neo4rs::Node) -> DnaTestRow {
     DnaTestRow {
         id: node.get("id").unwrap_or_default(),
-        test_type: node.get("test_type").ok(),
-        test_name: node.get("test_name").ok(),
-        provider: node.get("provider").ok(),
-        kit_number: node.get("kit_number").ok(),
+        test_type: non_empty(node, "test_type"),
+        test_name: non_empty(node, "test_name"),
+        provider: non_empty(node, "provider"),
+        kit_number: non_empty(node, "kit_number"),
         marker_count: node.get("marker_count").ok(),
         registered_with_project: node.get("registered_with_project").unwrap_or(false),
-        gedmatch_kit: node.get("gedmatch_kit").ok(),
+        gedmatch_kit: non_empty(node, "gedmatch_kit"),
     }
 }

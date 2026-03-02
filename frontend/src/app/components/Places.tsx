@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,7 +24,7 @@ import {
 } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
-import { Plus, Search, Check, X, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, Check, X, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   usePlacesQuery,
@@ -46,25 +47,15 @@ const placeSchema = z.object({
 type PlaceFormData = z.infer<typeof placeSchema>;
 
 export function Places() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [countryFilter, setCountryFilter] = useState('all');
   const [missingCoords, setMissingCoords] = useState(false);
   const [missingFS, setMissingFS] = useState(false);
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [offset, setOffset] = useState(0);
 
-  const [{ data: allData }] = usePlacesQuery({
-    variables: { offset: 0, limit: 1000 },
-  });
-
-  const [{ data, fetching, error }, refetchPlaces] = usePlacesQuery({
-    variables: {
-      country: countryFilter !== 'all' ? countryFilter : undefined,
-      offset,
-      limit: 50,
-    },
-  });
+  const [{ data, fetching, error }, refetchPlaces] = usePlacesQuery();
 
   const [, createPlace] = useCreatePlaceMutation();
   const [, updatePlace] = useUpdatePlaceMutation();
@@ -72,15 +63,17 @@ export function Places() {
 
   const places = data?.places?.items ?? [];
   const total = data?.places?.total ?? 0;
-  const hasMore = data?.places?.hasMore ?? false;
 
   const countries = useMemo(() => {
-    const allPlaces = allData?.places?.items ?? [];
-    return Array.from(new Set(allPlaces.map(p => p.country).filter(Boolean))).sort() as string[];
-  }, [allData]);
+    return Array.from(new Set(places.map(p => p.country).filter(Boolean))).sort() as string[];
+  }, [places]);
 
   const filtered = useMemo(() => {
     let result = [...places];
+
+    if (countryFilter !== 'all') {
+      result = result.filter(p => p.country === countryFilter);
+    }
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -100,7 +93,7 @@ export function Places() {
     }
 
     return result;
-  }, [places, searchQuery, missingCoords, missingFS]);
+  }, [places, countryFilter, searchQuery, missingCoords, missingFS]);
 
   const isEditing = editingPlace !== null;
   const modalOpen = isCreateModalOpen || isEditing;
@@ -237,7 +230,7 @@ export function Places() {
           />
         </div>
 
-        <Select value={countryFilter} onValueChange={(v) => { setCountryFilter(v); setOffset(0); }}>
+        <Select value={countryFilter} onValueChange={(v) => setCountryFilter(v)}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Country" />
           </SelectTrigger>
@@ -299,12 +292,12 @@ export function Places() {
                 <TableHead>State</TableHead>
                 <TableHead className="text-center">Coords</TableHead>
                 <TableHead className="text-center">FS</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((place) => (
-                <TableRow key={place.id}>
+                <TableRow key={place.id} className="cursor-pointer" onClick={() => setEditingPlace(place)}>
                   <TableCell className="font-medium">{place.name}</TableCell>
                   <TableCell>{place.county || '-'}</TableCell>
                   <TableCell>{place.state}</TableCell>
@@ -323,13 +316,16 @@ export function Places() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditingPlace(place)}
+                    <button
+                      title="Find people from this place"
+                      className="p-1 rounded hover:bg-muted"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/admin/people?q=${encodeURIComponent(place.name)}`);
+                      }}
                     >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -338,33 +334,6 @@ export function Places() {
 
           <div className="p-4 border-t bg-muted/20 text-sm text-muted-foreground">
             Showing {filtered.length} place{filtered.length !== 1 ? 's' : ''}
-          </div>
-        </div>
-      )}
-
-      {/* Pagination */}
-      {total > 50 && (
-        <div className="flex items-center justify-between pt-2">
-          <span className="text-sm text-gray-600">
-            Showing {offset + 1}-{Math.min(offset + 50, total)} of {total}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - 50))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hasMore}
-              onClick={() => setOffset(offset + 50)}
-            >
-              Next
-            </Button>
           </div>
         </div>
       )}

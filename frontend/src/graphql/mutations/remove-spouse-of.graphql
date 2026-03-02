@@ -1,0 +1,3 @@
+mutation RemoveSpouseOf($person1Id: String!, $person2Id: String!) {
+  removeSpouseOf(person1Id: $person1Id, person2Id: $person2Id)
+}

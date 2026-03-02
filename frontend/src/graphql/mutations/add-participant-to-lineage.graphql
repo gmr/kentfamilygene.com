@@ -1,0 +1,3 @@
+mutation AddParticipantToLineage($participantId: String!, $lineageId: String!, $input: ResearchesInput!) {
+  addParticipantToLineage(participantId: $participantId, lineageId: $lineageId, input: $input)
+}

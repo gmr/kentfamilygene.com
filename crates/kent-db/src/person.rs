@@ -8,33 +8,70 @@ pub async fn find_all_persons(
     offset: i64,
     limit: i64,
 ) -> Result<(Vec<PersonRow>, i64), Error> {
+    find_persons_filtered(graph, surname, false, offset, limit).await
+}
+
+pub async fn find_all_persons_including_placeholders(
+    graph: &Graph,
+    surname: Option<&str>,
+    offset: i64,
+    limit: i64,
+) -> Result<(Vec<PersonRow>, i64), Error> {
+    find_persons_filtered(graph, surname, true, offset, limit).await
+}
+
+async fn find_persons_filtered(
+    graph: &Graph,
+    surname: Option<&str>,
+    include_placeholders: bool,
+    offset: i64,
+    limit: i64,
+) -> Result<(Vec<PersonRow>, i64), Error> {
+    let base_filter = if include_placeholders {
+        String::new()
+    } else {
+        // Exclude privacy-labeled placeholder persons from the default listing.
+        "WHERE p.given_name IS NOT NULL AND p.privacy_label IS NULL".to_string()
+    };
+
+    let surname_clause = if surname.is_some() {
+        if base_filter.is_empty() {
+            "WHERE p.surname = $surname".to_string()
+        } else {
+            "AND p.surname = $surname".to_string()
+        }
+    } else {
+        String::new()
+    };
+
     let (query, count_query) = if let Some(surname) = surname {
         (
-            Query::new(
-                "MATCH (p:Person) WHERE p.surname = $surname \
+            Query::new(format!(
+                "MATCH (p:Person) {base_filter} {surname_clause} \
                  RETURN p ORDER BY p.surname, p.given_name \
                  SKIP $offset LIMIT $limit"
-                    .to_string(),
-            )
+            ))
             .param("surname", surname)
             .param("offset", offset)
             .param("limit", limit),
-            Query::new(
-                "MATCH (p:Person) WHERE p.surname = $surname RETURN count(p) AS total".to_string(),
-            )
+            Query::new(format!(
+                "MATCH (p:Person) {base_filter} {surname_clause} \
+                 RETURN count(p) AS total"
+            ))
             .param("surname", surname),
         )
     } else {
         (
-            Query::new(
-                "MATCH (p:Person) \
+            Query::new(format!(
+                "MATCH (p:Person) {base_filter} \
                  RETURN p ORDER BY p.surname, p.given_name \
                  SKIP $offset LIMIT $limit"
-                    .to_string(),
-            )
+            ))
             .param("offset", offset)
             .param("limit", limit),
-            Query::new("MATCH (p:Person) RETURN count(p) AS total".to_string()),
+            Query::new(format!(
+                "MATCH (p:Person) {base_filter} RETURN count(p) AS total"
+            )),
         )
     };
 
@@ -88,42 +125,24 @@ pub async fn create_person(graph: &Graph, row: &PersonRow) -> Result<PersonRow, 
     .param("id", row.id.clone())
     .param("given_name", row.given_name.clone())
     .param("surname", row.surname.clone())
-    .param("name_suffix", row.name_suffix.clone().unwrap_or_default())
-    .param("name_prefix", row.name_prefix.clone().unwrap_or_default())
-    .param(
-        "name_qualifier",
-        row.name_qualifier.clone().unwrap_or_default(),
-    )
-    .param("sex", row.sex.clone().unwrap_or_default())
-    .param("birth_date", row.birth_date.clone().unwrap_or_default())
-    .param(
-        "birth_date_sort",
-        row.birth_date_sort.clone().unwrap_or_default(),
-    )
-    .param(
-        "birth_date_modifier",
-        row.birth_date_modifier.clone().unwrap_or_default(),
-    )
-    .param("birth_place", row.birth_place.clone().unwrap_or_default())
-    .param("death_date", row.death_date.clone().unwrap_or_default())
-    .param(
-        "death_date_sort",
-        row.death_date_sort.clone().unwrap_or_default(),
-    )
-    .param(
-        "death_date_modifier",
-        row.death_date_modifier.clone().unwrap_or_default(),
-    )
-    .param("death_place", row.death_place.clone().unwrap_or_default())
+    .param("name_suffix", row.name_suffix.clone())
+    .param("name_prefix", row.name_prefix.clone())
+    .param("name_qualifier", row.name_qualifier.clone())
+    .param("sex", row.sex.clone())
+    .param("birth_date", row.birth_date.clone())
+    .param("birth_date_sort", row.birth_date_sort.clone())
+    .param("birth_date_modifier", row.birth_date_modifier.clone())
+    .param("birth_place", row.birth_place.clone())
+    .param("death_date", row.death_date.clone())
+    .param("death_date_sort", row.death_date_sort.clone())
+    .param("death_date_modifier", row.death_date_modifier.clone())
+    .param("death_place", row.death_place.clone())
     .param("is_living", row.is_living)
-    .param(
-        "privacy_label",
-        row.privacy_label.clone().unwrap_or_default(),
-    )
+    .param("privacy_label", row.privacy_label.clone())
     .param("is_immigrant_ancestor", row.is_immigrant_ancestor)
-    .param("notes", row.notes.clone().unwrap_or_default())
-    .param("created_date", row.created_date.clone().unwrap_or_default())
-    .param("updated_date", row.updated_date.clone().unwrap_or_default());
+    .param("notes", row.notes.clone())
+    .param("created_date", row.created_date.clone())
+    .param("updated_date", row.updated_date.clone());
 
     let mut result = graph.execute(query).await?;
     let r = result
@@ -157,41 +176,23 @@ pub async fn update_person(
     .param("id", id)
     .param("given_name", row.given_name.clone())
     .param("surname", row.surname.clone())
-    .param("name_suffix", row.name_suffix.clone().unwrap_or_default())
-    .param("name_prefix", row.name_prefix.clone().unwrap_or_default())
-    .param(
-        "name_qualifier",
-        row.name_qualifier.clone().unwrap_or_default(),
-    )
-    .param("sex", row.sex.clone().unwrap_or_default())
-    .param("birth_date", row.birth_date.clone().unwrap_or_default())
-    .param(
-        "birth_date_sort",
-        row.birth_date_sort.clone().unwrap_or_default(),
-    )
-    .param(
-        "birth_date_modifier",
-        row.birth_date_modifier.clone().unwrap_or_default(),
-    )
-    .param("birth_place", row.birth_place.clone().unwrap_or_default())
-    .param("death_date", row.death_date.clone().unwrap_or_default())
-    .param(
-        "death_date_sort",
-        row.death_date_sort.clone().unwrap_or_default(),
-    )
-    .param(
-        "death_date_modifier",
-        row.death_date_modifier.clone().unwrap_or_default(),
-    )
-    .param("death_place", row.death_place.clone().unwrap_or_default())
+    .param("name_suffix", row.name_suffix.clone())
+    .param("name_prefix", row.name_prefix.clone())
+    .param("name_qualifier", row.name_qualifier.clone())
+    .param("sex", row.sex.clone())
+    .param("birth_date", row.birth_date.clone())
+    .param("birth_date_sort", row.birth_date_sort.clone())
+    .param("birth_date_modifier", row.birth_date_modifier.clone())
+    .param("birth_place", row.birth_place.clone())
+    .param("death_date", row.death_date.clone())
+    .param("death_date_sort", row.death_date_sort.clone())
+    .param("death_date_modifier", row.death_date_modifier.clone())
+    .param("death_place", row.death_place.clone())
     .param("is_living", row.is_living)
-    .param(
-        "privacy_label",
-        row.privacy_label.clone().unwrap_or_default(),
-    )
+    .param("privacy_label", row.privacy_label.clone())
     .param("is_immigrant_ancestor", row.is_immigrant_ancestor)
-    .param("notes", row.notes.clone().unwrap_or_default())
-    .param("updated_date", row.updated_date.clone().unwrap_or_default());
+    .param("notes", row.notes.clone())
+    .param("updated_date", row.updated_date.clone());
 
     let mut result = graph.execute(query).await?;
     if let Some(r) = result.next().await? {
@@ -262,28 +263,33 @@ pub async fn find_persons_by_lineage(
     Ok(persons)
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_person_row(node: &neo4rs::Node) -> PersonRow {
     PersonRow {
         id: node.get("id").unwrap_or_default(),
         given_name: node.get("given_name").unwrap_or_default(),
         surname: node.get("surname").unwrap_or_default(),
-        name_suffix: node.get("name_suffix").ok(),
-        name_prefix: node.get("name_prefix").ok(),
-        name_qualifier: node.get("name_qualifier").ok(),
-        sex: node.get("sex").ok(),
-        birth_date: node.get("birth_date").ok(),
-        birth_date_sort: node.get("birth_date_sort").ok(),
-        birth_date_modifier: node.get("birth_date_modifier").ok(),
-        birth_place: node.get("birth_place").ok(),
-        death_date: node.get("death_date").ok(),
-        death_date_sort: node.get("death_date_sort").ok(),
-        death_date_modifier: node.get("death_date_modifier").ok(),
-        death_place: node.get("death_place").ok(),
+        name_suffix: non_empty(node, "name_suffix"),
+        name_prefix: non_empty(node, "name_prefix"),
+        name_qualifier: non_empty(node, "name_qualifier"),
+        sex: non_empty(node, "sex"),
+        birth_date: non_empty(node, "birth_date"),
+        birth_date_sort: non_empty(node, "birth_date_sort"),
+        birth_date_modifier: non_empty(node, "birth_date_modifier"),
+        birth_place: non_empty(node, "birth_place"),
+        death_date: non_empty(node, "death_date"),
+        death_date_sort: non_empty(node, "death_date_sort"),
+        death_date_modifier: non_empty(node, "death_date_modifier"),
+        death_place: non_empty(node, "death_place"),
         is_living: node.get("is_living").unwrap_or(false),
-        privacy_label: node.get("privacy_label").ok(),
+        privacy_label: non_empty(node, "privacy_label"),
         is_immigrant_ancestor: node.get("is_immigrant_ancestor").unwrap_or(false),
-        notes: node.get("notes").ok(),
-        created_date: node.get("created_date").ok(),
-        updated_date: node.get("updated_date").ok(),
+        notes: non_empty(node, "notes"),
+        created_date: non_empty(node, "created_date"),
+        updated_date: non_empty(node, "updated_date"),
     }
 }

@@ -6,27 +6,23 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Badge } from './ui/badge';
-import { Pencil, Plus, Search } from 'lucide-react';
-import { useParticipantsQuery } from '../../generated/graphql';
+import { Plus, Search } from 'lucide-react';
+import { useAdminParticipantsQuery } from '../../generated/graphql';
 
 export function Participants() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [membershipFilter, setMembershipFilter] = useState<'all' | 'member' | 'associate'>('all');
-  const [offset, setOffset] = useState(0);
 
-  const [{ data, fetching, error }] = useParticipantsQuery({
+  const [{ data, fetching, error }] = useAdminParticipantsQuery({
     variables: {
       activeOnly: activeFilter === 'active' ? true : activeFilter === 'inactive' ? false : undefined,
-      offset,
-      limit: 50,
     },
   });
 
-  const participants = data?.participants?.items ?? [];
-  const total = data?.participants?.total ?? 0;
-  const hasMore = data?.participants?.hasMore ?? false;
+  const participants = data?.adminParticipants?.items ?? [];
+  const total = data?.adminParticipants?.total ?? 0;
 
   // Client-side filters
   const filteredParticipants = useMemo(() => {
@@ -85,7 +81,7 @@ export function Participants() {
                 <Button
                   variant={activeFilter === 'all' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => { setActiveFilter('all'); setOffset(0); }}
+                  onClick={() => setActiveFilter('all')}
                   className="flex-1"
                 >
                   All
@@ -93,7 +89,7 @@ export function Participants() {
                 <Button
                   variant={activeFilter === 'active' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => { setActiveFilter('active'); setOffset(0); }}
+                  onClick={() => setActiveFilter('active')}
                   className="flex-1"
                 >
                   Active
@@ -101,7 +97,7 @@ export function Participants() {
                 <Button
                   variant={activeFilter === 'inactive' ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => { setActiveFilter('inactive'); setOffset(0); }}
+                  onClick={() => setActiveFilter('inactive')}
                   className="flex-1"
                 >
                   Inactive
@@ -159,12 +155,11 @@ export function Participants() {
                     <TableHead>Type</TableHead>
                     <TableHead>Kit No.</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredParticipants.map((participant) => (
-                    <TableRow key={participant.id}>
+                    <TableRow key={participant.id} className="cursor-pointer" onClick={() => navigate(`/admin/participants/${participant.id}`)}>
                       <TableCell className="font-medium">{participant.displayName}</TableCell>
                       <TableCell className="text-sm text-gray-600">{participant.email}</TableCell>
                       <TableCell>
@@ -180,13 +175,6 @@ export function Participants() {
                           {participant.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/participants/${participant.id}`)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -198,32 +186,11 @@ export function Participants() {
                 </div>
               )}
 
-              {/* Pagination */}
-              {total > 50 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <span className="text-sm text-gray-600">
-                    Showing {filteredParticipants.length} of {Math.min(50, total - offset)} on page ({total} total)
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={offset === 0}
-                      onClick={() => setOffset(Math.max(0, offset - 50))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!hasMore}
-                      onClick={() => setOffset(offset + 50)}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <div className="mt-4 pt-4 border-t">
+                <span className="text-sm text-gray-600">
+                  Showing {filteredParticipants.length} of {total} participants
+                </span>
+              </div>
             </>
           )}
         </CardContent>

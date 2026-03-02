@@ -80,15 +80,12 @@ pub async fn create_place(graph: &Graph, row: &PlaceRow) -> Result<PlaceRow, Err
     )
     .param("id", row.id.clone())
     .param("name", row.name.clone())
-    .param("county", row.county.clone().unwrap_or_default())
-    .param("state", row.state.clone().unwrap_or_default())
-    .param("country", row.country.clone().unwrap_or_default())
+    .param("county", row.county.clone())
+    .param("state", row.state.clone())
+    .param("country", row.country.clone())
     .param("lat", row.lat)
     .param("lon", row.lon)
-    .param(
-        "familysearch_url",
-        row.familysearch_url.clone().unwrap_or_default(),
-    );
+    .param("familysearch_url", row.familysearch_url.clone());
 
     let mut result = graph.execute(query).await?;
     let r = result
@@ -114,15 +111,12 @@ pub async fn update_place(
     )
     .param("id", id)
     .param("name", row.name.clone())
-    .param("county", row.county.clone().unwrap_or_default())
-    .param("state", row.state.clone().unwrap_or_default())
-    .param("country", row.country.clone().unwrap_or_default())
+    .param("county", row.county.clone())
+    .param("state", row.state.clone())
+    .param("country", row.country.clone())
     .param("lat", row.lat)
     .param("lon", row.lon)
-    .param(
-        "familysearch_url",
-        row.familysearch_url.clone().unwrap_or_default(),
-    );
+    .param("familysearch_url", row.familysearch_url.clone());
 
     let mut result = graph.execute(query).await?;
     if let Some(r) = result.next().await? {
@@ -168,15 +162,20 @@ pub async fn delete_place(graph: &Graph, id: &str) -> Result<bool, Error> {
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_place_row(node: &neo4rs::Node) -> PlaceRow {
     PlaceRow {
         id: node.get("id").unwrap_or_default(),
         name: node.get("name").unwrap_or_default(),
-        county: node.get("county").ok(),
-        state: node.get("state").ok(),
-        country: node.get("country").ok(),
+        county: non_empty(node, "county"),
+        state: non_empty(node, "state"),
+        country: non_empty(node, "country"),
         lat: node.get("lat").ok(),
         lon: node.get("lon").ok(),
-        familysearch_url: node.get("familysearch_url").ok(),
+        familysearch_url: non_empty(node, "familysearch_url"),
     }
 }

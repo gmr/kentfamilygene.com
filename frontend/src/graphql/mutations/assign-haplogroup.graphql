@@ -1,0 +1,3 @@
+mutation AssignHaplogroup($participantId: String!, $haplogroupId: String!) {
+  assignHaplogroup(participantId: $participantId, haplogroupId: $haplogroupId)
+}

@@ -219,7 +219,7 @@ impl MutationRoot {
         let graph = ctx.data::<Graph>()?;
         let now = now_str();
         let row = kent_db::LineageRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             origin_state: input.origin_state,
             lineage_number: input.lineage_number.map(|n| n as i64),
             display_name: input.display_name,
@@ -283,7 +283,7 @@ impl MutationRoot {
         let graph = ctx.data::<Graph>()?;
         let now = now_str();
         let row = kent_db::PersonRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             given_name: input.given_name,
             surname: input.surname,
             name_suffix: input.name_suffix,
@@ -368,7 +368,7 @@ impl MutationRoot {
         let graph = ctx.data::<Graph>()?;
         let now = now_str();
         let row = kent_db::ParticipantRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             display_name: input.display_name,
             email: input.email,
             membership_type: input.membership_type,
@@ -434,7 +434,7 @@ impl MutationRoot {
         require_auth(ctx)?;
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::PlaceRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             name: input.name,
             county: input.county,
             state: input.state,
@@ -490,7 +490,7 @@ impl MutationRoot {
         require_auth(ctx)?;
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::HaplogroupRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             name: input.name,
             subclade: input.subclade,
             abbreviation: input.abbreviation,
@@ -706,7 +706,7 @@ impl MutationRoot {
         require_auth(ctx)?;
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::DnaTestRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             test_type: input.test_type,
             test_name: input.test_name,
             provider: input.provider,
@@ -766,7 +766,7 @@ impl MutationRoot {
         require_auth(ctx)?;
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::OnlineTreeRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             platform: input.platform,
             username: input.username,
             tree_name: input.tree_name,
@@ -860,7 +860,7 @@ impl MutationRoot {
         require_auth(ctx)?;
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::AdminNoteRow {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),
             color: input.color,
             text: input.text,
             created_date: Some(now_str()),

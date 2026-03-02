@@ -1,0 +1,3 @@
+mutation UnlinkParticipantFromPerson($participantId: String!) {
+  unlinkParticipantFromPerson(participantId: $participantId)
+}

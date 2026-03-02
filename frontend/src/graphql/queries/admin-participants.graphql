@@ -1,0 +1,19 @@
+query AdminParticipants($activeOnly: Boolean) {
+  adminParticipants(activeOnly: $activeOnly) {
+    items {
+      id
+      displayName
+      email
+      membershipType
+      isActive
+      ftdnaKitNumber
+      joinDate
+      contactNote
+      researchGoal
+      createdDate
+      updatedDate
+    }
+    total
+    hasMore
+  }
+}

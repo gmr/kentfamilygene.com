@@ -1,0 +1,3 @@
+mutation RemoveParentOf($parentId: String!, $childId: String!) {
+  removeParentOf(parentId: $parentId, childId: $childId)
+}

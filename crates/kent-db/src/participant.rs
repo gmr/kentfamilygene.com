@@ -109,24 +109,15 @@ pub async fn create_participant(
     )
     .param("id", row.id.clone())
     .param("display_name", row.display_name.clone())
-    .param("email", row.email.clone().unwrap_or_default())
-    .param(
-        "membership_type",
-        row.membership_type.clone().unwrap_or_default(),
-    )
+    .param("email", row.email.clone())
+    .param("membership_type", row.membership_type.clone())
     .param("is_active", row.is_active)
-    .param(
-        "ftdna_kit_number",
-        row.ftdna_kit_number.clone().unwrap_or_default(),
-    )
-    .param("join_date", row.join_date.clone().unwrap_or_default())
-    .param("contact_note", row.contact_note.clone().unwrap_or_default())
-    .param(
-        "research_goal",
-        row.research_goal.clone().unwrap_or_default(),
-    )
-    .param("created_date", row.created_date.clone().unwrap_or_default())
-    .param("updated_date", row.updated_date.clone().unwrap_or_default());
+    .param("ftdna_kit_number", row.ftdna_kit_number.clone())
+    .param("join_date", row.join_date.clone())
+    .param("contact_note", row.contact_note.clone())
+    .param("research_goal", row.research_goal.clone())
+    .param("created_date", row.created_date.clone())
+    .param("updated_date", row.updated_date.clone());
 
     let mut result = graph.execute(query).await?;
     let r = result
@@ -154,23 +145,14 @@ pub async fn update_participant(
     )
     .param("id", id)
     .param("display_name", row.display_name.clone())
-    .param("email", row.email.clone().unwrap_or_default())
-    .param(
-        "membership_type",
-        row.membership_type.clone().unwrap_or_default(),
-    )
+    .param("email", row.email.clone())
+    .param("membership_type", row.membership_type.clone())
     .param("is_active", row.is_active)
-    .param(
-        "ftdna_kit_number",
-        row.ftdna_kit_number.clone().unwrap_or_default(),
-    )
-    .param("join_date", row.join_date.clone().unwrap_or_default())
-    .param("contact_note", row.contact_note.clone().unwrap_or_default())
-    .param(
-        "research_goal",
-        row.research_goal.clone().unwrap_or_default(),
-    )
-    .param("updated_date", row.updated_date.clone().unwrap_or_default());
+    .param("ftdna_kit_number", row.ftdna_kit_number.clone())
+    .param("join_date", row.join_date.clone())
+    .param("contact_note", row.contact_note.clone())
+    .param("research_goal", row.research_goal.clone())
+    .param("updated_date", row.updated_date.clone());
 
     let mut result = graph.execute(query).await?;
     if let Some(r) = result.next().await? {
@@ -216,18 +198,23 @@ pub async fn delete_participant(graph: &Graph, id: &str) -> Result<bool, Error> 
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_participant_row(node: &neo4rs::Node) -> ParticipantRow {
     ParticipantRow {
         id: node.get("id").unwrap_or_default(),
         display_name: node.get("display_name").unwrap_or_default(),
-        email: node.get("email").ok(),
-        membership_type: node.get("membership_type").ok(),
+        email: non_empty(node, "email"),
+        membership_type: non_empty(node, "membership_type"),
         is_active: node.get("is_active").unwrap_or(true),
-        ftdna_kit_number: node.get("ftdna_kit_number").ok(),
-        join_date: node.get("join_date").ok(),
-        contact_note: node.get("contact_note").ok(),
-        research_goal: node.get("research_goal").ok(),
-        created_date: node.get("created_date").ok(),
-        updated_date: node.get("updated_date").ok(),
+        ftdna_kit_number: non_empty(node, "ftdna_kit_number"),
+        join_date: non_empty(node, "join_date"),
+        contact_note: non_empty(node, "contact_note"),
+        research_goal: non_empty(node, "research_goal"),
+        created_date: non_empty(node, "created_date"),
+        updated_date: non_empty(node, "updated_date"),
     }
 }

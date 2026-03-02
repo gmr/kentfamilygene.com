@@ -61,7 +61,6 @@ export function AdminNotes() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<AdminNote | null>(null);
-  const [offset, setOffset] = useState(0);
 
   const resolved = statusFilter === 'open' ? false : statusFilter === 'resolved' ? true : undefined;
 
@@ -69,8 +68,6 @@ export function AdminNotes() {
     variables: {
       color: colorFilter !== 'all' ? colorFilter.toUpperCase() : undefined,
       resolved,
-      offset,
-      limit: 50,
     },
   });
 
@@ -80,7 +77,6 @@ export function AdminNotes() {
 
   const notes = data?.adminNotes?.items ?? [];
   const total = data?.adminNotes?.total ?? 0;
-  const hasMore = data?.adminNotes?.hasMore ?? false;
 
   const filtered = useMemo(() => {
     if (!searchQuery) return notes;
@@ -207,7 +203,7 @@ export function AdminNotes() {
 
       {/* Filters */}
       <div className="flex gap-2 items-center flex-wrap p-4 bg-muted/50 rounded-lg">
-        <Select value={colorFilter} onValueChange={(v) => { setColorFilter(v); setOffset(0); }}>
+        <Select value={colorFilter} onValueChange={(v) => setColorFilter(v)}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="All Colors" />
           </SelectTrigger>
@@ -220,7 +216,7 @@ export function AdminNotes() {
           </SelectContent>
         </Select>
 
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setOffset(0); }}>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v)}>
           <SelectTrigger className="w-[120px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -308,37 +304,8 @@ export function AdminNotes() {
           </div>
 
           <div className="p-4 border rounded-lg bg-muted/20 text-sm text-muted-foreground text-center">
-            Showing {filtered.length} note{filtered.length !== 1 ? 's' : ''}
-            {(searchQuery || filtered.length !== notes.length) && ` of ${notes.length} on this page`}
-            {total > 50 && ` (${total} total)`}
+            Showing {filtered.length} of {total} notes
           </div>
-
-          {/* Pagination */}
-          {total > 50 && (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">
-                Page {Math.floor(offset / 50) + 1}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={offset === 0}
-                  onClick={() => setOffset(Math.max(0, offset - 50))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!hasMore}
-                  onClick={() => setOffset(offset + 50)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
         </>
       )}
 

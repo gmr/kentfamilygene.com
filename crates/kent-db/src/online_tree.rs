@@ -54,10 +54,10 @@ pub async fn create_online_tree(
     )
     .param("participant_id", participant_id)
     .param("id", row.id.clone())
-    .param("platform", row.platform.clone().unwrap_or_default())
-    .param("username", row.username.clone().unwrap_or_default())
-    .param("tree_name", row.tree_name.clone().unwrap_or_default())
-    .param("url", row.url.clone().unwrap_or_default());
+    .param("platform", row.platform.clone())
+    .param("username", row.username.clone())
+    .param("tree_name", row.tree_name.clone())
+    .param("url", row.url.clone());
 
     let mut result = graph.execute(query).await?;
     let r = result.next().await?.ok_or(Error::Deserialization(
@@ -80,12 +80,17 @@ pub async fn delete_online_tree(graph: &Graph, id: &str) -> Result<bool, Error> 
     }
 }
 
+/// Convert empty strings to None for optional fields.
+fn non_empty(node: &neo4rs::Node, key: &str) -> Option<String> {
+    node.get::<String>(key).ok().filter(|s| !s.is_empty())
+}
+
 pub(crate) fn node_to_online_tree_row(node: &neo4rs::Node) -> OnlineTreeRow {
     OnlineTreeRow {
         id: node.get("id").unwrap_or_default(),
-        platform: node.get("platform").ok(),
-        username: node.get("username").ok(),
-        tree_name: node.get("tree_name").ok(),
-        url: node.get("url").ok(),
+        platform: non_empty(node, "platform"),
+        username: non_empty(node, "username"),
+        tree_name: non_empty(node, "tree_name"),
+        url: non_empty(node, "url"),
     }
 }
