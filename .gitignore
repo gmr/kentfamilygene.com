@@ -28,4 +28,7 @@ neo4j_data/
 
 # PRDs and design documentation
 plans
-data/
+data
+
+# GraphQL codegen output
+frontend/src/generated/

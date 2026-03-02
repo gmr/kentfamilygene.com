@@ -1,0 +1,18 @@
+query Lineages($region: String, $offset: Int, $limit: Int) {
+  lineages(region: $region, offset: $offset, limit: $limit) {
+    items {
+      id
+      originState
+      lineageNumber
+      displayName
+      region
+      statusNote
+      isNew
+      newLineageDate
+      createdDate
+      updatedDate
+    }
+    total
+    hasMore
+  }
+}

@@ -1,0 +1,10 @@
+query Search($query: String!, $types: [SearchType!], $limit: Int) {
+  search(query: $query, types: $types, limit: $limit) {
+    items {
+      id
+      resultType
+      display
+      score
+    }
+  }
+}

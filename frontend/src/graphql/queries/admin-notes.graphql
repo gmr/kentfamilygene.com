@@ -1,0 +1,13 @@
+query AdminNotes($color: String, $resolved: Boolean, $offset: Int, $limit: Int) {
+  adminNotes(color: $color, resolved: $resolved, offset: $offset, limit: $limit) {
+    items {
+      id
+      color
+      text
+      createdDate
+      resolved
+    }
+    total
+    hasMore
+  }
+}

@@ -1,0 +1,14 @@
+query Haplogroups($haplogroupType: String, $offset: Int, $limit: Int) {
+  haplogroups(haplogroupType: $haplogroupType, offset: $offset, limit: $limit) {
+    items {
+      id
+      name
+      subclade
+      abbreviation
+      confirmationStatus
+      haplogroupType
+    }
+    total
+    hasMore
+  }
+}

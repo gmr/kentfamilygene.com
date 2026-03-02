@@ -1,0 +1,19 @@
+query Participants($activeOnly: Boolean, $offset: Int, $limit: Int) {
+  participants(activeOnly: $activeOnly, offset: $offset, limit: $limit) {
+    items {
+      id
+      displayName
+      email
+      membershipType
+      isActive
+      ftdnaKitNumber
+      joinDate
+      contactNote
+      researchGoal
+      createdDate
+      updatedDate
+    }
+    total
+    hasMore
+  }
+}

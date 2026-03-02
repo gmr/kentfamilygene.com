@@ -1,0 +1,16 @@
+query Places($country: String, $offset: Int, $limit: Int) {
+  places(country: $country, offset: $offset, limit: $limit) {
+    items {
+      id
+      name
+      county
+      state
+      country
+      lat
+      lon
+      familysearchUrl
+    }
+    total
+    hasMore
+  }
+}

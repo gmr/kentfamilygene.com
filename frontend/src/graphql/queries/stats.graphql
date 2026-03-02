@@ -1,0 +1,9 @@
+query Stats {
+  stats {
+    lineageCount
+    personCount
+    participantCount
+    haplogroupCount
+    placeCount
+  }
+}
