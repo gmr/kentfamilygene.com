@@ -1,0 +1,3 @@
+mutation DeletePlace($id: String!) {
+  deletePlace(id: $id)
+}

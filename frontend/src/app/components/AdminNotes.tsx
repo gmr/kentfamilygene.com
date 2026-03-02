@@ -1,4 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Button } from './ui/button';
 import {
   Select,
@@ -8,20 +11,27 @@ import {
   SelectValue,
 } from './ui/select';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
-import { Plus, Search } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
+import { Plus, Search, Pencil, Trash2, CheckCircle, Circle } from 'lucide-react';
 import { Badge } from './ui/badge';
-import { useAdminNotesQuery, type AdminNote } from '../../generated/graphql';
+import { toast } from 'sonner';
+import {
+  useAdminNotesQuery,
+  useCreateAdminNoteMutation,
+  useUpdateAdminNoteMutation,
+  useDeleteAdminNoteMutation,
+  type AdminNote,
+} from '../../generated/graphql';
 
 const noteColorClasses: Record<string, string> = {
   PINK: 'border-pink-400 bg-pink-50',
   ORANGE: 'border-orange-400 bg-orange-50',
   BLUE: 'border-blue-400 bg-blue-50',
   GREEN: 'border-green-400 bg-green-50',
-  pink: 'border-pink-400 bg-pink-50',
-  orange: 'border-orange-400 bg-orange-50',
-  blue: 'border-blue-400 bg-blue-50',
-  green: 'border-green-400 bg-green-50',
 };
 
 const noteColorBadge: Record<string, string> = {
@@ -29,22 +39,33 @@ const noteColorBadge: Record<string, string> = {
   ORANGE: 'bg-orange-500',
   BLUE: 'bg-blue-500',
   GREEN: 'bg-green-500',
-  pink: 'bg-pink-500',
-  orange: 'bg-orange-500',
-  blue: 'bg-blue-500',
-  green: 'bg-green-500',
 };
+
+const noteColors = {
+  PINK: { label: 'Action Required', bgColor: 'bg-pink-100', borderColor: 'border-pink-300' },
+  ORANGE: { label: 'Question', bgColor: 'bg-orange-100', borderColor: 'border-orange-300' },
+  BLUE: { label: 'Information', bgColor: 'bg-blue-100', borderColor: 'border-blue-300' },
+  GREEN: { label: 'Completed', bgColor: 'bg-green-100', borderColor: 'border-green-300' },
+};
+
+const noteSchema = z.object({
+  color: z.enum(['PINK', 'ORANGE', 'BLUE', 'GREEN']),
+  text: z.string().min(1, 'Note text is required'),
+});
+
+type NoteFormData = z.infer<typeof noteSchema>;
 
 export function AdminNotes() {
   const [colorFilter, setColorFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('open');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState<AdminNote | null>(null);
   const [offset, setOffset] = useState(0);
 
   const resolved = statusFilter === 'open' ? false : statusFilter === 'resolved' ? true : undefined;
 
-  const [{ data, fetching, error }] = useAdminNotesQuery({
+  const [{ data, fetching, error }, refetchNotes] = useAdminNotesQuery({
     variables: {
       color: colorFilter !== 'all' ? colorFilter.toUpperCase() : undefined,
       resolved,
@@ -53,16 +74,105 @@ export function AdminNotes() {
     },
   });
 
+  const [, createAdminNote] = useCreateAdminNoteMutation();
+  const [, updateAdminNote] = useUpdateAdminNoteMutation();
+  const [, deleteAdminNote] = useDeleteAdminNoteMutation();
+
   const notes = data?.adminNotes?.items ?? [];
   const total = data?.adminNotes?.total ?? 0;
   const hasMore = data?.adminNotes?.hasMore ?? false;
 
-  // Client-side search filter
   const filtered = useMemo(() => {
     if (!searchQuery) return notes;
     const query = searchQuery.toLowerCase();
     return notes.filter(n => n.text.toLowerCase().includes(query));
   }, [notes, searchQuery]);
+
+  const isEditing = editingNote !== null;
+  const modalOpen = isCreateModalOpen || isEditing;
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<NoteFormData>({
+    resolver: zodResolver(noteSchema),
+    defaultValues: {
+      color: 'PINK',
+      text: '',
+    },
+  });
+
+  const color = watch('color');
+
+  useEffect(() => {
+    if (editingNote) {
+      reset({
+        color: (editingNote.color?.toUpperCase() as NoteFormData['color']) || 'PINK',
+        text: editingNote.text,
+      });
+    } else if (isCreateModalOpen) {
+      reset({ color: 'PINK', text: '' });
+    }
+  }, [editingNote, isCreateModalOpen, reset]);
+
+  const closeModal = () => {
+    setIsCreateModalOpen(false);
+    setEditingNote(null);
+  };
+
+  const onSubmit = async (formData: NoteFormData) => {
+    if (isEditing) {
+      const result = await updateAdminNote({
+        id: editingNote!.id,
+        input: { color: formData.color, text: formData.text },
+      });
+      if (result.error) {
+        toast.error('Failed to update note');
+        return;
+      }
+      toast.success('Note updated');
+    } else {
+      const result = await createAdminNote({
+        input: { color: formData.color, text: formData.text },
+      });
+      if (result.error) {
+        toast.error('Failed to create note');
+        return;
+      }
+      toast.success('Note created');
+    }
+    refetchNotes({ requestPolicy: 'network-only' });
+    closeModal();
+  };
+
+  const handleDelete = async () => {
+    if (!editingNote) return;
+    const result = await deleteAdminNote({ id: editingNote.id });
+    if (result.error) {
+      toast.error('Failed to delete note');
+      return;
+    }
+    toast.success('Note deleted');
+    refetchNotes({ requestPolicy: 'network-only' });
+    closeModal();
+  };
+
+  const handleToggleResolved = async (note: AdminNote) => {
+    const result = await updateAdminNote({
+      id: note.id,
+      input: { resolved: !note.resolved },
+    });
+    if (result.error) {
+      toast.error('Failed to update note');
+      return;
+    }
+    toast.success(note.resolved ? 'Note reopened' : 'Note resolved');
+    refetchNotes({ requestPolicy: 'network-only' });
+  };
 
   if (fetching) {
     return (
@@ -103,10 +213,10 @@ export function AdminNotes() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Colors</SelectItem>
-            <SelectItem value="pink">Pink</SelectItem>
-            <SelectItem value="orange">Orange</SelectItem>
-            <SelectItem value="blue">Blue</SelectItem>
-            <SelectItem value="green">Green</SelectItem>
+            <SelectItem value="PINK">Pink</SelectItem>
+            <SelectItem value="ORANGE">Orange</SelectItem>
+            <SelectItem value="BLUE">Blue</SelectItem>
+            <SelectItem value="GREEN">Green</SelectItem>
           </SelectContent>
         </Select>
 
@@ -153,12 +263,12 @@ export function AdminNotes() {
             {filtered.map((note) => (
               <div
                 key={note.id}
-                className={`border-l-4 rounded-lg p-4 ${noteColorClasses[note.color ?? ''] || 'border-gray-300 bg-gray-50'}`}
+                className={`border-l-4 rounded-lg p-4 ${noteColorClasses[note.color?.toUpperCase() ?? ''] || 'border-gray-300 bg-gray-50'}`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <div className={`w-2.5 h-2.5 rounded-full ${noteColorBadge[note.color ?? ''] || 'bg-gray-400'}`} />
+                      <div className={`w-2.5 h-2.5 rounded-full ${noteColorBadge[note.color?.toUpperCase() ?? ''] || 'bg-gray-400'}`} />
                       <span className="text-xs text-muted-foreground capitalize">{note.color?.toLowerCase()}</span>
                       {note.resolved && (
                         <Badge variant="secondary" className="text-xs">Resolved</Badge>
@@ -170,6 +280,27 @@ export function AdminNotes() {
                         Created: {note.createdDate}
                       </p>
                     )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleToggleResolved(note)}
+                      title={note.resolved ? 'Reopen' : 'Resolve'}
+                    >
+                      {note.resolved ? (
+                        <Circle className="h-4 w-4" />
+                      ) : (
+                        <CheckCircle className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingNote(note)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -211,19 +342,91 @@ export function AdminNotes() {
         </>
       )}
 
-      {/* Create Modal — placeholder for Phase 3c */}
-      {isCreateModalOpen && (
-        <Dialog open onOpenChange={() => setIsCreateModalOpen(false)}>
-          <DialogContent>
+      {/* Create/Edit Modal */}
+      {modalOpen && (
+        <Dialog open onOpenChange={closeModal}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Create Note</DialogTitle>
+              <DialogTitle>{isEditing ? 'Edit Note' : 'Create Note'}</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-gray-500 py-4">Form wiring coming in Phase 3c.</p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                Close
-              </Button>
-            </DialogFooter>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div>
+                <Label>Color</Label>
+                <RadioGroup
+                  value={color}
+                  onValueChange={(value) => setValue('color', value as NoteFormData['color'])}
+                  className="grid grid-cols-2 gap-3 mt-2"
+                >
+                  {(Object.entries(noteColors) as [string, typeof noteColors.PINK][]).map(([colorKey, config]) => (
+                    <div key={colorKey}>
+                      <RadioGroupItem
+                        value={colorKey}
+                        id={`note-color-${colorKey}`}
+                        className="peer sr-only"
+                      />
+                      <label
+                        htmlFor={`note-color-${colorKey}`}
+                        className={`
+                          flex items-center gap-2 p-3 border-2 rounded-lg cursor-pointer
+                          transition-colors peer-checked:border-primary
+                          ${config.bgColor}
+                        `}
+                      >
+                        <div className={`w-3 h-3 rounded-full ${noteColorBadge[colorKey]}`} />
+                        <span className="font-medium text-sm">{config.label}</span>
+                      </label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
+
+              <div>
+                <Label htmlFor="note-text">Note *</Label>
+                <Textarea
+                  id="note-text"
+                  {...register('text')}
+                  rows={4}
+                  placeholder="Enter note text..."
+                  className={errors.text ? 'border-red-500' : ''}
+                />
+                {errors.text && (
+                  <p className="text-sm text-red-500 mt-1">{errors.text.message}</p>
+                )}
+              </div>
+
+              <DialogFooter className="flex justify-between sm:justify-between">
+                <div>
+                  {isEditing && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Note</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete this note? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       )}

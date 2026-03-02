@@ -1,0 +1,3 @@
+mutation DeleteLineage($id: String!) {
+  deleteLineage(id: $id)
+}

@@ -1,0 +1,15 @@
+query AdminParticipant($id: String!) {
+  adminParticipant(id: $id) {
+    id
+    displayName
+    email
+    membershipType
+    isActive
+    ftdnaKitNumber
+    joinDate
+    contactNote
+    researchGoal
+    createdDate
+    updatedDate
+  }
+}

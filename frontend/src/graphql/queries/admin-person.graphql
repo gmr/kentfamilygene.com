@@ -1,0 +1,25 @@
+query AdminPerson($id: String!) {
+  adminPerson(id: $id) {
+    id
+    givenName
+    surname
+    nameSuffix
+    namePrefix
+    nameQualifier
+    sex
+    birthDate
+    birthDateSort
+    birthDateModifier
+    birthPlace
+    deathDate
+    deathDateSort
+    deathDateModifier
+    deathPlace
+    isLiving
+    privacyLabel
+    isImmigrantAncestor
+    notes
+    createdDate
+    updatedDate
+  }
+}

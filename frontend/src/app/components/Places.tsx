@@ -1,4 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
   Table,
   TableBody,
@@ -9,6 +12,7 @@ import {
 } from './ui/table';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
 import {
   Select,
@@ -18,8 +22,28 @@ import {
   SelectValue,
 } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
-import { Plus, Search, Check, X, Pencil } from 'lucide-react';
-import { usePlacesQuery, type Place } from '../../generated/graphql';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
+import { Plus, Search, Check, X, Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  usePlacesQuery,
+  useCreatePlaceMutation,
+  useUpdatePlaceMutation,
+  useDeletePlaceMutation,
+  type Place,
+} from '../../generated/graphql';
+
+const placeSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  county: z.string().optional(),
+  state: z.string().optional(),
+  country: z.string().optional(),
+  lat: z.union([z.number(), z.nan()]).optional().nullable(),
+  lon: z.union([z.number(), z.nan()]).optional().nullable(),
+  familysearchUrl: z.string().optional(),
+});
+
+type PlaceFormData = z.infer<typeof placeSchema>;
 
 export function Places() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,12 +54,11 @@ export function Places() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [offset, setOffset] = useState(0);
 
-  // Fetch all places (unfiltered) to populate country dropdown
   const [{ data: allData }] = usePlacesQuery({
     variables: { offset: 0, limit: 1000 },
   });
 
-  const [{ data, fetching, error }] = usePlacesQuery({
+  const [{ data, fetching, error }, refetchPlaces] = usePlacesQuery({
     variables: {
       country: countryFilter !== 'all' ? countryFilter : undefined,
       offset,
@@ -43,17 +66,19 @@ export function Places() {
     },
   });
 
+  const [, createPlace] = useCreatePlaceMutation();
+  const [, updatePlace] = useUpdatePlaceMutation();
+  const [, deletePlace] = useDeletePlaceMutation();
+
   const places = data?.places?.items ?? [];
   const total = data?.places?.total ?? 0;
   const hasMore = data?.places?.hasMore ?? false;
 
-  // Get unique countries from ALL places for filter
   const countries = useMemo(() => {
     const allPlaces = allData?.places?.items ?? [];
     return Array.from(new Set(allPlaces.map(p => p.country).filter(Boolean))).sort() as string[];
   }, [allData]);
 
-  // Client-side filters
   const filtered = useMemo(() => {
     let result = [...places];
 
@@ -76,6 +101,98 @@ export function Places() {
 
     return result;
   }, [places, searchQuery, missingCoords, missingFS]);
+
+  const isEditing = editingPlace !== null;
+  const modalOpen = isCreateModalOpen || isEditing;
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<PlaceFormData>({
+    resolver: zodResolver(placeSchema),
+    defaultValues: {
+      name: '',
+      county: '',
+      state: '',
+      country: 'United States',
+      lat: null,
+      lon: null,
+      familysearchUrl: '',
+    },
+  });
+
+  useEffect(() => {
+    if (editingPlace) {
+      reset({
+        name: editingPlace.name,
+        county: editingPlace.county ?? '',
+        state: editingPlace.state ?? '',
+        country: editingPlace.country ?? 'United States',
+        lat: editingPlace.lat ?? null,
+        lon: editingPlace.lon ?? null,
+        familysearchUrl: editingPlace.familysearchUrl ?? '',
+      });
+    } else if (isCreateModalOpen) {
+      reset({
+        name: '',
+        county: '',
+        state: '',
+        country: 'United States',
+        lat: null,
+        lon: null,
+        familysearchUrl: '',
+      });
+    }
+  }, [editingPlace, isCreateModalOpen, reset]);
+
+  const closeModal = () => {
+    setIsCreateModalOpen(false);
+    setEditingPlace(null);
+  };
+
+  const onSubmit = async (formData: PlaceFormData) => {
+    const input = {
+      name: formData.name,
+      county: formData.county || undefined,
+      state: formData.state || undefined,
+      country: formData.country || undefined,
+      lat: formData.lat != null && !isNaN(formData.lat) ? formData.lat : undefined,
+      lon: formData.lon != null && !isNaN(formData.lon) ? formData.lon : undefined,
+      familysearchUrl: formData.familysearchUrl || undefined,
+    };
+
+    if (isEditing) {
+      const result = await updatePlace({ id: editingPlace!.id, input });
+      if (result.error) {
+        toast.error('Failed to update place');
+        return;
+      }
+      toast.success('Place updated');
+    } else {
+      const result = await createPlace({ input });
+      if (result.error) {
+        toast.error('Failed to create place');
+        return;
+      }
+      toast.success('Place created');
+    }
+    refetchPlaces({ requestPolicy: 'network-only' });
+    closeModal();
+  };
+
+  const handleDelete = async () => {
+    if (!editingPlace) return;
+    const result = await deletePlace({ id: editingPlace.id });
+    if (result.error) {
+      toast.error('Failed to delete place');
+      return;
+    }
+    toast.success('Place deleted');
+    refetchPlaces({ requestPolicy: 'network-only' });
+    closeModal();
+  };
 
   if (fetching) {
     return (
@@ -252,19 +369,111 @@ export function Places() {
         </div>
       )}
 
-      {/* Create/Edit Modal — placeholder for Phase 3c */}
-      {(isCreateModalOpen || editingPlace) && (
-        <Dialog open onOpenChange={() => { setIsCreateModalOpen(false); setEditingPlace(null); }}>
-          <DialogContent>
+      {/* Create/Edit Modal */}
+      {modalOpen && (
+        <Dialog open onOpenChange={closeModal}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>{editingPlace ? 'Edit Place' : 'Create Place'}</DialogTitle>
+              <DialogTitle>{isEditing ? 'Edit Place' : 'Create Place'}</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-gray-500 py-4">Form wiring coming in Phase 3c.</p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setIsCreateModalOpen(false); setEditingPlace(null); }}>
-                Close
-              </Button>
-            </DialogFooter>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div>
+                <Label htmlFor="place-name">Full Name *</Label>
+                <Input
+                  id="place-name"
+                  {...register('name')}
+                  placeholder="Warren Co., Georgia"
+                  className={errors.name ? 'border-red-500' : ''}
+                />
+                {errors.name && (
+                  <p className="text-sm text-red-500 mt-1">{errors.name.message}</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="place-county">County</Label>
+                <Input id="place-county" {...register('county')} placeholder="Warren" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="place-state">State</Label>
+                  <Input id="place-state" {...register('state')} placeholder="Georgia" />
+                </div>
+                <div>
+                  <Label htmlFor="place-country">Country</Label>
+                  <Input id="place-country" {...register('country')} placeholder="United States" />
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-2 text-sm">Coordinates</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="place-lat">Latitude</Label>
+                    <Input
+                      id="place-lat"
+                      type="number"
+                      step="any"
+                      {...register('lat', { setValueAs: (v) => v === '' ? null : parseFloat(v) })}
+                      placeholder="33.4068"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="place-lon">Longitude</Label>
+                    <Input
+                      id="place-lon"
+                      type="number"
+                      step="any"
+                      {...register('lon', { setValueAs: (v) => v === '' ? null : parseFloat(v) })}
+                      placeholder="-82.6776"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <Label htmlFor="place-fs">FamilySearch Wiki URL</Label>
+                <Input
+                  id="place-fs"
+                  {...register('familysearchUrl')}
+                  placeholder="https://familysearch.org/wiki/..."
+                />
+              </div>
+
+              <DialogFooter className="flex justify-between sm:justify-between">
+                <div>
+                  {isEditing && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Place</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{editingPlace?.name}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       )}

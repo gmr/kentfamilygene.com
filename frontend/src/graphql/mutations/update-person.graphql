@@ -1,0 +1,25 @@
+mutation UpdatePerson($id: String!, $input: UpdatePersonInput!) {
+  updatePerson(id: $id, input: $input) {
+    id
+    givenName
+    surname
+    nameSuffix
+    namePrefix
+    nameQualifier
+    sex
+    birthDate
+    birthDateSort
+    birthDateModifier
+    birthPlace
+    deathDate
+    deathDateSort
+    deathDateModifier
+    deathPlace
+    isLiving
+    privacyLabel
+    isImmigrantAncestor
+    notes
+    createdDate
+    updatedDate
+  }
+}

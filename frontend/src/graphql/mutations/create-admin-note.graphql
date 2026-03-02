@@ -1,0 +1,9 @@
+mutation CreateAdminNote($input: CreateAdminNoteInput!) {
+  createAdminNote(input: $input) {
+    id
+    color
+    text
+    createdDate
+    resolved
+  }
+}

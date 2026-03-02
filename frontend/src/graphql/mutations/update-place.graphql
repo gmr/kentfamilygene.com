@@ -1,0 +1,12 @@
+mutation UpdatePlace($id: String!, $input: UpdatePlaceInput!) {
+  updatePlace(id: $id, input: $input) {
+    id
+    name
+    county
+    state
+    country
+    lat
+    lon
+    familysearchUrl
+  }
+}

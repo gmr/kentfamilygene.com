@@ -1,0 +1,10 @@
+mutation CreateHaplogroup($input: CreateHaplogroupInput!) {
+  createHaplogroup(input: $input) {
+    id
+    name
+    subclade
+    abbreviation
+    confirmationStatus
+    haplogroupType
+  }
+}

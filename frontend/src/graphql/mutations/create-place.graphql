@@ -1,0 +1,12 @@
+mutation CreatePlace($input: CreatePlaceInput!) {
+  createPlace(input: $input) {
+    id
+    name
+    county
+    state
+    country
+    lat
+    lon
+    familysearchUrl
+  }
+}

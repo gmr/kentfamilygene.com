@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { DateModifier } from '../../../lib/mock-data';
+
+type DateModifier = 'EXACT' | 'ABOUT' | 'BEFORE' | 'AFTER' | 'CALCULATED' | 'PROBABLY';
 
 interface GenealogyDateInputProps {
   value: string;
@@ -12,20 +13,20 @@ interface GenealogyDateInputProps {
 }
 
 const DATE_MODIFIERS: { value: DateModifier; label: string }[] = [
-  { value: 'exact', label: 'Exact' },
-  { value: 'about', label: 'About' },
-  { value: 'before', label: 'Before' },
-  { value: 'after', label: 'After' },
-  { value: 'between', label: 'Between' },
-  { value: 'calculated', label: 'Calculated' },
-  { value: 'estimated', label: 'Estimated' },
+  { value: 'EXACT', label: 'Exact' },
+  { value: 'ABOUT', label: 'About' },
+  { value: 'BEFORE', label: 'Before' },
+  { value: 'AFTER', label: 'After' },
+  { value: 'CALCULATED', label: 'Calculated' },
+  { value: 'PROBABLY', label: 'Probably' },
 ];
+
+export type { DateModifier };
 
 export function GenealogyDateInput({ value, modifier, onChange, label }: GenealogyDateInputProps) {
   const [dateValue, setDateValue] = useState(value);
   const [dateModifier, setDateModifier] = useState<DateModifier>(modifier);
 
-  // Parse date on mount to extract modifier if present
   useEffect(() => {
     if (value) {
       const parsed = parseDateString(value);
@@ -38,44 +39,39 @@ export function GenealogyDateInput({ value, modifier, onChange, label }: Genealo
     const upper = dateStr.trim().toUpperCase();
 
     if (upper.startsWith('ABT ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'about' };
+      return { cleanDate: dateStr.substring(4).trim(), modifier: 'ABOUT' };
     }
     if (upper.startsWith('BEF ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'before' };
+      return { cleanDate: dateStr.substring(4).trim(), modifier: 'BEFORE' };
     }
     if (upper.startsWith('AFT ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'after' };
-    }
-    if (upper.includes(' BET ') && upper.includes(' AND ')) {
-      return { cleanDate: dateStr, modifier: 'between' };
+      return { cleanDate: dateStr.substring(4).trim(), modifier: 'AFTER' };
     }
     if (upper.startsWith('CAL ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'calculated' };
+      return { cleanDate: dateStr.substring(4).trim(), modifier: 'CALCULATED' };
     }
-    if (upper.startsWith('EST ')) {
-      return { cleanDate: dateStr.substring(4).trim(), modifier: 'estimated' };
+    if (upper.startsWith('PROB ')) {
+      return { cleanDate: dateStr.substring(5).trim(), modifier: 'PROBABLY' };
     }
 
-    return { cleanDate: dateStr, modifier: 'exact' };
+    return { cleanDate: dateStr, modifier: 'EXACT' };
   };
 
   const formatDateWithModifier = (date: string, mod: DateModifier): string => {
     if (!date || date.trim() === '') return '';
 
     switch (mod) {
-      case 'about':
+      case 'ABOUT':
         return `ABT ${date}`;
-      case 'before':
+      case 'BEFORE':
         return `BEF ${date}`;
-      case 'after':
+      case 'AFTER':
         return `AFT ${date}`;
-      case 'calculated':
+      case 'CALCULATED':
         return `CAL ${date}`;
-      case 'estimated':
-        return `EST ${date}`;
-      case 'between':
-        return date; // User enters full "BET 1800 AND 1810"
-      case 'exact':
+      case 'PROBABLY':
+        return `PROB ${date}`;
+      case 'EXACT':
       default:
         return date;
     }
@@ -101,10 +97,10 @@ export function GenealogyDateInput({ value, modifier, onChange, label }: Genealo
           <Input
             value={dateValue}
             onChange={(e) => handleDateChange(e.target.value)}
-            placeholder="e.g., 1792, 5 APR 1856, BET 1800 AND 1810"
+            placeholder="e.g., 1792, 5 APR 1856"
           />
           <p className="text-xs text-gray-500 mt-1">
-            Formats: 1792, 5 APR 1856, BET 1800 AND 1810
+            Formats: 1792, 5 APR 1856, APR 1856
           </p>
         </div>
         <div>

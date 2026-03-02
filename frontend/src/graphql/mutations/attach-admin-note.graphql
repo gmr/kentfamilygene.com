@@ -1,0 +1,3 @@
+mutation AttachAdminNote($noteId: String!, $targetId: String!, $targetType: AnnotationTarget!) {
+  attachAdminNote(noteId: $noteId, targetId: $targetId, targetType: $targetType)
+}

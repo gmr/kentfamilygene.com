@@ -1,0 +1,14 @@
+mutation CreateLineage($input: CreateLineageInput!) {
+  createLineage(input: $input) {
+    id
+    originState
+    lineageNumber
+    displayName
+    region
+    statusNote
+    isNew
+    newLineageDate
+    createdDate
+    updatedDate
+  }
+}

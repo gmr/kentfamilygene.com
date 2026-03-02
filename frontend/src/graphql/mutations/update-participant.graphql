@@ -1,0 +1,15 @@
+mutation UpdateParticipant($id: String!, $input: UpdateParticipantInput!) {
+  updateParticipant(id: $id, input: $input) {
+    id
+    displayName
+    email
+    membershipType
+    isActive
+    ftdnaKitNumber
+    joinDate
+    contactNote
+    researchGoal
+    createdDate
+    updatedDate
+  }
+}

@@ -1,0 +1,14 @@
+mutation UpdateLineage($id: String!, $input: UpdateLineageInput!) {
+  updateLineage(id: $id, input: $input) {
+    id
+    originState
+    lineageNumber
+    displayName
+    region
+    statusNote
+    isNew
+    newLineageDate
+    createdDate
+    updatedDate
+  }
+}

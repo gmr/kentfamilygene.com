@@ -1,4 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import {
   Table,
   TableBody,
@@ -9,24 +12,46 @@ import {
 } from './ui/table';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Badge } from './ui/badge';
+import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
-import { Plus, Search, Pencil } from 'lucide-react';
-import { useHaplogroupsQuery, type Haplogroup } from '../../generated/graphql';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
+import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  useHaplogroupsQuery,
+  useCreateHaplogroupMutation,
+  useUpdateHaplogroupMutation,
+  useDeleteHaplogroupMutation,
+  type Haplogroup,
+} from '../../generated/graphql';
+
+const haplogroupSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  subclade: z.string().optional(),
+  abbreviation: z.string().optional(),
+  haplogroupType: z.enum(['Y_DNA', 'MT_DNA']),
+  confirmationStatus: z.enum(['PREDICTED', 'CONFIRMED']),
+});
+
+type HaplogroupFormData = z.infer<typeof haplogroupSchema>;
 
 export function Haplogroups() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingHaplogroup, setEditingHaplogroup] = useState<Haplogroup | null>(null);
 
-  // Small dataset — fetch all
-  const [{ data, fetching, error }] = useHaplogroupsQuery({
+  const [{ data, fetching, error }, refetchHaplogroups] = useHaplogroupsQuery({
     variables: { offset: 0, limit: 200 },
   });
 
+  const [, createHaplogroup] = useCreateHaplogroupMutation();
+  const [, updateHaplogroup] = useUpdateHaplogroupMutation();
+  const [, deleteHaplogroup] = useDeleteHaplogroupMutation();
+
   const haplogroups = data?.haplogroups?.items ?? [];
 
-  // Client-side search filter
   const filtered = useMemo(() => {
     if (!searchQuery) return haplogroups;
     const query = searchQuery.toLowerCase();
@@ -36,6 +61,103 @@ export function Haplogroups() {
       h.abbreviation?.toLowerCase().includes(query)
     );
   }, [haplogroups, searchQuery]);
+
+  const isEditing = editingHaplogroup !== null;
+  const modalOpen = isCreateModalOpen || isEditing;
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<HaplogroupFormData>({
+    resolver: zodResolver(haplogroupSchema),
+    defaultValues: {
+      name: '',
+      subclade: '',
+      abbreviation: '',
+      haplogroupType: 'Y_DNA',
+      confirmationStatus: 'PREDICTED',
+    },
+  });
+
+  const haplogroupType = watch('haplogroupType');
+  const name = watch('name');
+  const subclade = watch('subclade');
+
+  // Auto-generate abbreviation on create
+  useEffect(() => {
+    if (!isEditing && name && subclade) {
+      setValue('abbreviation', `${name.charAt(0).toUpperCase()}-${subclade}`);
+    }
+  }, [name, subclade, isEditing, setValue]);
+
+  useEffect(() => {
+    if (editingHaplogroup) {
+      reset({
+        name: editingHaplogroup.name,
+        subclade: editingHaplogroup.subclade ?? '',
+        abbreviation: editingHaplogroup.abbreviation ?? '',
+        haplogroupType: (editingHaplogroup.haplogroupType as 'Y_DNA' | 'MT_DNA') || 'Y_DNA',
+        confirmationStatus: (editingHaplogroup.confirmationStatus as 'PREDICTED' | 'CONFIRMED') || 'PREDICTED',
+      });
+    } else if (isCreateModalOpen) {
+      reset({
+        name: '',
+        subclade: '',
+        abbreviation: '',
+        haplogroupType: 'Y_DNA',
+        confirmationStatus: 'PREDICTED',
+      });
+    }
+  }, [editingHaplogroup, isCreateModalOpen, reset]);
+
+  const closeModal = () => {
+    setIsCreateModalOpen(false);
+    setEditingHaplogroup(null);
+  };
+
+  const onSubmit = async (formData: HaplogroupFormData) => {
+    const input = {
+      name: formData.name,
+      subclade: formData.subclade || undefined,
+      abbreviation: formData.abbreviation || undefined,
+      haplogroupType: formData.haplogroupType,
+      confirmationStatus: formData.confirmationStatus,
+    };
+
+    if (isEditing) {
+      const result = await updateHaplogroup({ id: editingHaplogroup!.id, input });
+      if (result.error) {
+        toast.error('Failed to update haplogroup');
+        return;
+      }
+      toast.success('Haplogroup updated');
+    } else {
+      const result = await createHaplogroup({ input });
+      if (result.error) {
+        toast.error('Failed to create haplogroup');
+        return;
+      }
+      toast.success('Haplogroup created');
+    }
+    refetchHaplogroups({ requestPolicy: 'network-only' });
+    closeModal();
+  };
+
+  const handleDelete = async () => {
+    if (!editingHaplogroup) return;
+    const result = await deleteHaplogroup({ id: editingHaplogroup.id });
+    if (result.error) {
+      toast.error('Failed to delete haplogroup');
+      return;
+    }
+    toast.success('Haplogroup deleted');
+    refetchHaplogroups({ requestPolicy: 'network-only' });
+    closeModal();
+  };
 
   if (fetching) {
     return (
@@ -144,19 +266,111 @@ export function Haplogroups() {
         </div>
       )}
 
-      {/* Create/Edit Modal — placeholder for Phase 3c */}
-      {(isCreateModalOpen || editingHaplogroup) && (
-        <Dialog open onOpenChange={() => { setIsCreateModalOpen(false); setEditingHaplogroup(null); }}>
-          <DialogContent>
+      {/* Create/Edit Modal */}
+      {modalOpen && (
+        <Dialog open onOpenChange={closeModal}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>{editingHaplogroup ? 'Edit Haplogroup' : 'Create Haplogroup'}</DialogTitle>
+              <DialogTitle>{isEditing ? 'Edit Haplogroup' : 'Create Haplogroup'}</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-gray-500 py-4">Form wiring coming in Phase 3c.</p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setIsCreateModalOpen(false); setEditingHaplogroup(null); }}>
-                Close
-              </Button>
-            </DialogFooter>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div>
+                <Label htmlFor="hg-name">Name *</Label>
+                <Input
+                  id="hg-name"
+                  {...register('name')}
+                  placeholder="R1b1a2"
+                  className={errors.name ? 'border-red-500' : ''}
+                />
+                {errors.name && (
+                  <p className="text-sm text-red-500 mt-1">{errors.name.message}</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="hg-subclade">Subclade</Label>
+                <Input id="hg-subclade" {...register('subclade')} placeholder="M269" />
+              </div>
+
+              <div>
+                <Label htmlFor="hg-abbreviation">Abbreviation</Label>
+                <Input id="hg-abbreviation" {...register('abbreviation')} placeholder="R-M269" />
+                {!isEditing && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Auto-generated from name + subclade. You can override.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <Label>Type</Label>
+                <RadioGroup
+                  value={haplogroupType}
+                  onValueChange={(value) => setValue('haplogroupType', value as 'Y_DNA' | 'MT_DNA')}
+                  className="flex gap-4 mt-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="Y_DNA" id="y-dna" />
+                    <Label htmlFor="y-dna" className="font-normal cursor-pointer">y-DNA</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="MT_DNA" id="mt-dna" />
+                    <Label htmlFor="mt-dna" className="font-normal cursor-pointer">mt-DNA</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <div>
+                <Label>Confirmation Status</Label>
+                <RadioGroup
+                  value={watch('confirmationStatus')}
+                  onValueChange={(value) => setValue('confirmationStatus', value as 'PREDICTED' | 'CONFIRMED')}
+                  className="flex gap-4 mt-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="PREDICTED" id="predicted" />
+                    <Label htmlFor="predicted" className="font-normal cursor-pointer">Predicted</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="CONFIRMED" id="confirmed" />
+                    <Label htmlFor="confirmed" className="font-normal cursor-pointer">Confirmed</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <DialogFooter className="flex justify-between sm:justify-between">
+                <div>
+                  {isEditing && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Haplogroup</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{editingHaplogroup?.name}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       )}

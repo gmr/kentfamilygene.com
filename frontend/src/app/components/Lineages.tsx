@@ -1,14 +1,38 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Checkbox } from './ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Pencil, Plus, Search, X } from 'lucide-react';
-import { useLineagesQuery, type Lineage } from '../../generated/graphql';
+import { Pencil, Plus, Search, X, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  useLineagesQuery,
+  useCreateLineageMutation,
+  useUpdateLineageMutation,
+  useDeleteLineageMutation,
+  type Lineage,
+} from '../../generated/graphql';
+
+const lineageSchema = z.object({
+  displayName: z.string().min(1, 'Display name is required'),
+  region: z.string().optional(),
+  originState: z.string().optional(),
+  lineageNumber: z.union([z.number().int().positive(), z.nan()]).optional(),
+  statusNote: z.string().optional(),
+  isNew: z.boolean().optional(),
+  newLineageDate: z.string().optional(),
+});
+
+type LineageFormData = z.infer<typeof lineageSchema>;
 
 export function Lineages() {
   const [regionFilter, setRegionFilter] = useState<string>('all');
@@ -18,12 +42,11 @@ export function Lineages() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingLineage, setEditingLineage] = useState<Lineage | null>(null);
 
-  // Fetch all lineages (unfiltered) to populate region dropdown
   const [{ data: allData }] = useLineagesQuery({
     variables: { offset: 0, limit: 500 },
   });
 
-  const [{ data, fetching, error }] = useLineagesQuery({
+  const [{ data, fetching, error }, refetchLineages] = useLineagesQuery({
     variables: {
       region: regionFilter !== 'all' ? regionFilter : undefined,
       offset,
@@ -31,17 +54,19 @@ export function Lineages() {
     },
   });
 
+  const [, createLineage] = useCreateLineageMutation();
+  const [, updateLineage] = useUpdateLineageMutation();
+  const [, deleteLineage] = useDeleteLineageMutation();
+
   const lineages = data?.lineages?.items ?? [];
   const total = data?.lineages?.total ?? 0;
   const hasMore = data?.lineages?.hasMore ?? false;
 
-  // Extract unique regions from ALL lineages for filter dropdown
   const regions = useMemo(() => {
     const allLineages = allData?.lineages?.items ?? [];
     return Array.from(new Set(allLineages.map(l => l.region).filter(Boolean))).sort() as string[];
   }, [allData]);
 
-  // Client-side filters
   const filteredLineages = useMemo(() => {
     let filtered = [...lineages];
 
@@ -59,6 +84,102 @@ export function Lineages() {
 
     return filtered;
   }, [lineages, searchQuery, newLineagesFilter]);
+
+  const isEditing = editingLineage !== null;
+  const modalOpen = showCreateModal || isEditing;
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<LineageFormData>({
+    resolver: zodResolver(lineageSchema),
+    defaultValues: {
+      displayName: '',
+      region: '',
+      originState: '',
+      lineageNumber: undefined,
+      statusNote: '',
+      isNew: false,
+      newLineageDate: '',
+    },
+  });
+
+  const isNewChecked = watch('isNew');
+
+  useEffect(() => {
+    if (editingLineage) {
+      reset({
+        displayName: editingLineage.displayName,
+        region: editingLineage.region ?? '',
+        originState: editingLineage.originState ?? '',
+        lineageNumber: editingLineage.lineageNumber ?? undefined,
+        statusNote: editingLineage.statusNote ?? '',
+        isNew: editingLineage.isNew,
+        newLineageDate: editingLineage.newLineageDate ?? '',
+      });
+    } else if (showCreateModal) {
+      reset({
+        displayName: '',
+        region: '',
+        originState: '',
+        lineageNumber: undefined,
+        statusNote: '',
+        isNew: false,
+        newLineageDate: '',
+      });
+    }
+  }, [editingLineage, showCreateModal, reset]);
+
+  const closeModal = () => {
+    setShowCreateModal(false);
+    setEditingLineage(null);
+  };
+
+  const onSubmit = async (formData: LineageFormData) => {
+    const input = {
+      displayName: formData.displayName,
+      region: formData.region || undefined,
+      originState: formData.originState || undefined,
+      lineageNumber: formData.lineageNumber && !isNaN(formData.lineageNumber) ? formData.lineageNumber : undefined,
+      statusNote: formData.statusNote || undefined,
+      isNew: formData.isNew || false,
+      newLineageDate: formData.newLineageDate || undefined,
+    };
+
+    if (isEditing) {
+      const result = await updateLineage({ id: editingLineage!.id, input });
+      if (result.error) {
+        toast.error('Failed to update lineage');
+        return;
+      }
+      toast.success('Lineage updated');
+    } else {
+      const result = await createLineage({ input });
+      if (result.error) {
+        toast.error('Failed to create lineage');
+        return;
+      }
+      toast.success('Lineage created');
+    }
+    refetchLineages({ requestPolicy: 'network-only' });
+    closeModal();
+  };
+
+  const handleDelete = async () => {
+    if (!editingLineage) return;
+    const result = await deleteLineage({ id: editingLineage.id });
+    if (result.error) {
+      toast.error('Failed to delete lineage');
+      return;
+    }
+    toast.success('Lineage deleted');
+    refetchLineages({ requestPolicy: 'network-only' });
+    closeModal();
+  };
 
   return (
     <div className="space-y-6">
@@ -234,19 +355,102 @@ export function Lineages() {
         </CardContent>
       </Card>
 
-      {/* Create/Edit Modal — placeholder for Phase 3c */}
-      {(showCreateModal || editingLineage) && (
-        <Dialog open onOpenChange={() => { setShowCreateModal(false); setEditingLineage(null); }}>
-          <DialogContent>
+      {/* Create/Edit Modal */}
+      {modalOpen && (
+        <Dialog open onOpenChange={closeModal}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>{editingLineage ? 'Edit Lineage' : 'Create Lineage'}</DialogTitle>
+              <DialogTitle>{isEditing ? 'Edit Lineage' : 'Create Lineage'}</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-gray-500 py-4">Form wiring coming in Phase 3c.</p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setShowCreateModal(false); setEditingLineage(null); }}>
-                Close
-              </Button>
-            </DialogFooter>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div>
+                <Label htmlFor="displayName">Display Name *</Label>
+                <Input
+                  id="displayName"
+                  {...register('displayName')}
+                  placeholder="e.g., Kent of Virginia"
+                  className={errors.displayName ? 'border-red-500' : ''}
+                />
+                {errors.displayName && (
+                  <p className="text-sm text-red-500 mt-1">{errors.displayName.message}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="region">Region</Label>
+                  <Input id="region" {...register('region')} placeholder="Southeast" />
+                </div>
+                <div>
+                  <Label htmlFor="originState">Origin State</Label>
+                  <Input id="originState" {...register('originState')} placeholder="Virginia" />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="lineageNumber">Lineage Number</Label>
+                <Input
+                  id="lineageNumber"
+                  type="number"
+                  {...register('lineageNumber', { valueAsNumber: true })}
+                  placeholder="1"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="statusNote">Status Note</Label>
+                <Input id="statusNote" {...register('statusNote')} placeholder="Optional status note" />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="isNew"
+                  checked={isNewChecked}
+                  onCheckedChange={(checked) => setValue('isNew', checked as boolean)}
+                />
+                <Label htmlFor="isNew" className="font-normal cursor-pointer">Mark as new lineage</Label>
+              </div>
+
+              {isNewChecked && (
+                <div>
+                  <Label htmlFor="newLineageDate">New Lineage Date</Label>
+                  <Input id="newLineageDate" {...register('newLineageDate')} placeholder="2024-01-15" />
+                </div>
+              )}
+
+              <DialogFooter className="flex justify-between sm:justify-between">
+                <div>
+                  {isEditing && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Lineage</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{editingLineage?.displayName}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={closeModal}>Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : isEditing ? 'Update' : 'Create'}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       )}

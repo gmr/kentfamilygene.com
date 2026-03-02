@@ -1,0 +1,10 @@
+mutation UpdateHaplogroup($id: String!, $input: UpdateHaplogroupInput!) {
+  updateHaplogroup(id: $id, input: $input) {
+    id
+    name
+    subclade
+    abbreviation
+    confirmationStatus
+    haplogroupType
+  }
+}

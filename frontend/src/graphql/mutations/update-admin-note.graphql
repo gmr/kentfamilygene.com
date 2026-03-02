@@ -1,0 +1,9 @@
+mutation UpdateAdminNote($id: String!, $input: UpdateAdminNoteInput!) {
+  updateAdminNote(id: $id, input: $input) {
+    id
+    color
+    text
+    createdDate
+    resolved
+  }
+}
