@@ -365,11 +365,9 @@ fn parse_bio_text(text: &str) -> ParsedPerson {
             "m" => {
                 person.spouses = parse_spouse_text(content);
             }
-            "res" => {
+            "res" if person.notes.is_none() => {
                 // Residence — store as note
-                if person.notes.is_none() {
-                    person.notes = Some(format!("res. {content}"));
-                }
+                person.notes = Some(format!("res. {content}"));
             }
             _ => {}
         }
