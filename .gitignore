@@ -32,3 +32,6 @@ data
 
 # GraphQL codegen output
 frontend/src/generated/
+
+# Imported FTDNA page dump — contains participant email addresses
+source.html
