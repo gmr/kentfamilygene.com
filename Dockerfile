@@ -12,18 +12,10 @@ FROM rust:1-alpine AS backend
 RUN apk add --no-cache musl-dev pkgconf openssl-dev openssl-libs-static
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
-# Compile dependencies against stub crates first, so editing our own sources
-# doesn't invalidate the (slow) dependency layer on every build.
-COPY crates/kent-db/Cargo.toml ./crates/kent-db/
-COPY crates/kent-domain/Cargo.toml ./crates/kent-domain/
-COPY crates/kent-api/Cargo.toml ./crates/kent-api/
-RUN mkdir -p crates/kent-db/src crates/kent-domain/src crates/kent-api/src \
-    && echo 'pub fn stub() {}' > crates/kent-db/src/lib.rs \
-    && echo 'pub fn stub() {}' > crates/kent-domain/src/lib.rs \
-    && echo 'fn main() {}' > crates/kent-api/src/main.rs \
-    && cargo build --release -p kent-api \
-    && rm -rf crates/kent-db/src crates/kent-domain/src crates/kent-api/src
 COPY crates/ crates/
+# No stub-crate dependency cache here: cargo judges freshness by mtime, so a
+# prebuilt stub can survive the real COPY and ship a do-nothing binary. Reach
+# for cargo-chef if the full rebuild per push becomes a problem.
 RUN cargo build --release -p kent-api
 
 # -- Runtime --
