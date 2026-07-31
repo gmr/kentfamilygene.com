@@ -1092,7 +1092,7 @@ impl MutationRoot {
             location: input.location,
             group_label: input.group_label,
             label: input.label,
-            target: input.target,
+            target: validate_nav_target(&input.target)?,
             sort_order: input.sort_order.unwrap_or(0) as i64,
         };
         Ok(NavItem::from(kent_db::create_nav_item(graph, &row).await?))
@@ -1111,7 +1111,7 @@ impl MutationRoot {
             location: input.location,
             group_label: input.group_label,
             label: input.label,
-            target: input.target,
+            target: validate_nav_target(&input.target)?,
             sort_order: input.sort_order.unwrap_or(0) as i64,
         };
         let updated = kent_db::update_nav_item(graph, &id, &row)
@@ -1125,6 +1125,23 @@ impl MutationRoot {
         let graph = ctx.data::<Graph>()?;
         Ok(kent_db::delete_nav_item(graph, &id).await?)
     }
+}
+
+/// Nav targets must be a site-relative path or an allowlisted URL scheme, so a
+/// stored target can never become a `javascript:`/`data:` href on the public site.
+fn validate_nav_target(target: &str) -> async_graphql::Result<String> {
+    let t = target.trim();
+    if t.starts_with('/') && !t.starts_with("//") {
+        return Ok(t.to_string());
+    }
+    let lower = t.to_ascii_lowercase();
+    if ["http://", "https://", "mailto:", "tel:"]
+        .iter()
+        .any(|p| lower.starts_with(p))
+    {
+        return Ok(t.to_string());
+    }
+    Err("Target must be a path starting with / or an http(s), mailto, or tel URL".into())
 }
 
 /// Slugs and snippet keys are URL-addressable: lowercase, hyphen-separated.

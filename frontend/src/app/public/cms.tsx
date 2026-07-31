@@ -23,8 +23,24 @@ export function Snippet({ keyName, children }: { keyName: string; children: Reac
   return body ? <Markdown>{body}</Markdown> : <>{children}</>;
 }
 
+const SAFE_PROTOCOLS = ['http:', 'https:', 'mailto:', 'tel:'];
+
+/**
+ * Nav targets are admin-authored, but never hand a scheme we did not vet to an
+ * href — `javascript:` and `data:` targets are coerced to a dead link.
+ */
+export function safeTarget(target: string): string {
+  // Internal path; "//host" would be protocol-relative, so reject it.
+  if (target.startsWith('/') && !target.startsWith('//')) return target;
+  try {
+    return SAFE_PROTOCOLS.includes(new URL(target).protocol) ? target : '#';
+  } catch {
+    return '#';
+  }
+}
+
 export function isExternal(target: string): boolean {
-  return /^https?:\/\//i.test(target) || target.startsWith('mailto:');
+  return /^https?:\/\//i.test(target) || /^(mailto|tel):/i.test(target);
 }
 
 /** Renders a nav target as an <a> for external URLs, a <Link> for internal paths. */
@@ -39,15 +55,16 @@ export function NavTarget({
   style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
-  if (isExternal(target)) {
+  const href = safeTarget(target);
+  if (href === '#' || isExternal(href)) {
     return (
-      <a href={target} className={className} style={style} target="_blank" rel="noreferrer">
+      <a href={href} className={className} style={style} target="_blank" rel="noreferrer">
         {children}
       </a>
     );
   }
   return (
-    <Link to={target} className={className} style={style}>
+    <Link to={href} className={className} style={style}>
       {children}
     </Link>
   );

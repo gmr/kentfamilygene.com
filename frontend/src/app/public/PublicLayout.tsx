@@ -1,6 +1,6 @@
 import { NavLink, Link, Outlet } from 'react-router-dom';
 import { useStatsQuery, useNavItemsQuery } from '../../generated/graphql';
-import { NavTarget, Snippet, groupFooterItems, isExternal, type CmsNavItem } from './cms';
+import { NavTarget, Snippet, groupFooterItems, isExternal, safeTarget, type CmsNavItem } from './cms';
 import './public.css';
 
 const LAST_UPDATED = 'Jul 2026';
@@ -111,8 +111,8 @@ export function PublicLayout() {
             style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <span className="kent-nav-items" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {nav.map((item) =>
-                isExternal(item.target) ? (
+              {nav.map((item) => ({ ...item, target: safeTarget(item.target) })).map((item) =>
+                item.target === '#' || isExternal(item.target) ? (
                   <NavTarget key={item.id} target={item.target} className="kent-navlink">
                     {item.label}
                   </NavTarget>
