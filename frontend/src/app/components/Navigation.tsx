@@ -92,19 +92,34 @@ export function Navigation() {
     refetch({ requestPolicy: 'network-only' });
   };
 
+  const asInput = (item: NavItem, sortOrder: number) => ({
+    location: item.location,
+    groupLabel: item.groupLabel ?? undefined,
+    label: item.label,
+    target: item.target,
+    sortOrder,
+  });
+
+  // Swap with the adjacent item in the same group — bumping sortOrder alone
+  // just ties with the neighbour and the label tiebreak decides the order.
   const move = async (item: NavItem, delta: number) => {
-    const result = await updateNavItem({
-      id: item.id,
-      input: {
-        location: item.location,
-        groupLabel: item.groupLabel ?? undefined,
-        label: item.label,
-        target: item.target,
-        sortOrder: item.sortOrder + delta,
-      },
-    });
-    if (result.error) {
-      toast.error(result.error.message.replace('[GraphQL] ', ''));
+    const siblings = items.filter(
+      (i) => i.location === item.location && (i.groupLabel ?? '') === (item.groupLabel ?? ''),
+    );
+    const idx = siblings.findIndex((i) => i.id === item.id);
+    if (idx + delta < 0 || idx + delta >= siblings.length) return;
+
+    // Renumber the whole group so pre-existing duplicate orders can't stall the swap.
+    const reordered = [...siblings];
+    [reordered[idx], reordered[idx + delta]] = [reordered[idx + delta], reordered[idx]];
+    const results = await Promise.all(
+      reordered
+        .map((s, i) => (s.sortOrder === i ? null : updateNavItem({ id: s.id, input: asInput(s, i) })))
+        .filter((p): p is NonNullable<typeof p> => p !== null),
+    );
+    const failed = results.find((r) => r.error);
+    if (failed) {
+      toast.error(failed.error!.message.replace('[GraphQL] ', ''));
       return;
     }
     refetch({ requestPolicy: 'network-only' });

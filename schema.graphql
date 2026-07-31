@@ -329,7 +329,7 @@ type Query {
   lineage(id: String!): Lineage
   persons(surname: String, offset: Int = 0, limit: Int = 50): PersonConnection!
   person(id: String!): Person
-  participants(activeOnly: Boolean, offset: Int = 0, limit: Int = 50): ParticipantConnection!
+  participants(activeOnly: Boolean, newestFirst: Boolean = false, offset: Int = 0, limit: Int = 50): ParticipantConnection!
   participant(id: String!): Participant
   haplogroups(haplogroupType: String, offset: Int = 0, limit: Int = 50): HaplogroupConnection!
   places(country: String, offset: Int = 0, limit: Int = 50): PlaceConnection!

@@ -64,13 +64,17 @@ impl Person {
             .map(
                 |(spouse, marriage_date, marriage_place, marriage_order, spouse_surname)| {
                     let mut spouse = Person::from(spouse);
+                    // The MARRIED_TO edge carries the spouse's real surname and
+                    // marriage details, so masking the Person alone still leaks
+                    // them. Decide before masking clears the dates.
+                    let masked = privacy::spouse_is_masked_for_ctx(ctx, &spouse);
                     privacy::mask_person_for_ctx(ctx, &mut spouse);
                     SpouseRelationship {
                         spouse,
-                        marriage_date,
-                        marriage_place,
+                        marriage_date: if masked { None } else { marriage_date },
+                        marriage_place: if masked { None } else { marriage_place },
                         marriage_order: marriage_order.and_then(|n| i32::try_from(n).ok()),
-                        spouse_surname,
+                        spouse_surname: if masked { None } else { spouse_surname },
                     }
                 },
             )

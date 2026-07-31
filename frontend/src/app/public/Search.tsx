@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gql, useClient } from 'urql';
 import { SearchType, useSearchQuery } from '../../generated/graphql';
@@ -53,9 +53,16 @@ export function Search() {
   const [q, setQ] = useState('');
   const [type, setType] = useState<SearchType | 'ALL'>('ALL');
 
+  // Each query fans out across five fulltext indexes, so don't fire per keystroke.
+  const [debouncedQ, setDebouncedQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
   const [{ data, fetching }] = useSearchQuery({
-    variables: { query: q, types: type === 'ALL' ? undefined : [type], limit: 40 },
-    pause: q.trim().length === 0,
+    variables: { query: debouncedQ, types: type === 'ALL' ? undefined : [type], limit: 40 },
+    pause: debouncedQ.trim().length === 0,
   });
 
   const results = data?.search.items ?? [];

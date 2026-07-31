@@ -67,10 +67,10 @@ export function Snippets() {
     const result = editing
       ? await updateSnippet({
           id: editing.id,
-          input: { key: draft.key, title: draft.title || undefined, body: draft.body },
+          input: { key: draft.key, title: draft.title, body: draft.body },
         })
       : await createSnippet({
-          input: { key: draft.key, title: draft.title || undefined, body: draft.body },
+          input: { key: draft.key, title: draft.title, body: draft.body },
         });
     setSaving(false);
     if (result.error) {

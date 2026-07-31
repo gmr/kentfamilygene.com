@@ -32,6 +32,12 @@ pub fn mask_participant_for_ctx(ctx: &Context<'_>, participant: &mut Participant
     }
 }
 
+/// True when this spouse's details must be hidden from the caller. Check before
+/// masking — `mask_person` clears the dates the living test relies on.
+pub fn spouse_is_masked_for_ctx(ctx: &Context<'_>, spouse: &Person) -> bool {
+    is_public(ctx) && is_living(spouse)
+}
+
 /// Strip participant PII from a list only for public (unauthenticated) requests.
 pub fn mask_participants_for_ctx(ctx: &Context<'_>, participants: &mut [Participant]) {
     if is_public(ctx) {
@@ -41,14 +47,23 @@ pub fn mask_participants_for_ctx(ctx: &Context<'_>, participants: &mut [Particip
 
 /// Determine if a person should be treated as living (and thus privacy-masked).
 fn is_living(person: &Person) -> bool {
+    is_living_dates(
+        person.death_date.as_deref(),
+        person.birth_date_sort.as_deref(),
+    )
+}
+
+/// The living check over raw date fields, for callers that hold a row rather
+/// than a `Person` (search hits).
+pub fn is_living_dates(death_date: Option<&str>, birth_date_sort: Option<&str>) -> bool {
     // If there's a death date, they're not living
-    if person.death_date.is_some() {
+    if death_date.is_some() {
         return false;
     }
 
     // If birth_date_sort exists, check if they'd be over 100
     // birth_date_sort is stored as "YYYY-MM-DD" string
-    if let Some(ref sort_date) = person.birth_date_sort
+    if let Some(sort_date) = birth_date_sort
         && let Some(year_str) = sort_date.split('-').next()
         && let Ok(birth_year) = year_str.parse::<i32>()
     {

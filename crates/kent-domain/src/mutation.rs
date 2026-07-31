@@ -974,10 +974,10 @@ impl MutationRoot {
         let now = now_str();
         let row = kent_db::PageRow {
             id: Uuid::now_v7().to_string(),
-            slug: normalize_slug(&input.slug),
+            slug: require_slug(&input.slug)?,
             title: input.title,
             body: input.body,
-            summary: input.summary,
+            summary: input.summary.filter(|s| !s.trim().is_empty()),
             is_published: input.is_published.unwrap_or(false),
             created_date: Some(now.clone()),
             updated_date: Some(now),
@@ -998,13 +998,14 @@ impl MutationRoot {
             .ok_or("Page not found")?;
         let row = kent_db::PageRow {
             id: id.clone(),
-            slug: input
-                .slug
-                .map(|s| normalize_slug(&s))
-                .unwrap_or(existing.slug),
+            slug: match input.slug {
+                Some(s) => require_slug(&s)?,
+                None => existing.slug,
+            },
             title: input.title.unwrap_or(existing.title),
             body: input.body.unwrap_or(existing.body),
-            summary: input.summary.or(existing.summary),
+            // An explicit empty string clears the field; an absent one keeps it.
+            summary: clearable(input.summary, existing.summary),
             is_published: input.is_published.unwrap_or(existing.is_published),
             created_date: existing.created_date,
             updated_date: Some(now_str()),
@@ -1033,8 +1034,8 @@ impl MutationRoot {
         let now = now_str();
         let row = kent_db::SnippetRow {
             id: Uuid::now_v7().to_string(),
-            key: normalize_slug(&input.key),
-            title: input.title,
+            key: require_slug(&input.key)?,
+            title: input.title.filter(|s| !s.trim().is_empty()),
             body: input.body,
             created_date: Some(now.clone()),
             updated_date: Some(now),
@@ -1057,11 +1058,11 @@ impl MutationRoot {
             .ok_or("Snippet not found")?;
         let row = kent_db::SnippetRow {
             id: id.clone(),
-            key: input
-                .key
-                .map(|k| normalize_slug(&k))
-                .unwrap_or(existing.key),
-            title: input.title.or(existing.title),
+            key: match input.key {
+                Some(k) => require_slug(&k)?,
+                None => existing.key,
+            },
+            title: clearable(input.title, existing.title),
             body: input.body.unwrap_or(existing.body),
             created_date: existing.created_date,
             updated_date: Some(now_str()),
@@ -1142,6 +1143,25 @@ fn validate_nav_target(target: &str) -> async_graphql::Result<String> {
         return Ok(t.to_string());
     }
     Err("Target must be a path starting with / or an http(s), mailto, or tel URL".into())
+}
+
+/// An optional update field: `Some("")` clears the value, absent keeps it.
+fn clearable(input: Option<String>, existing: Option<String>) -> Option<String> {
+    match input {
+        Some(s) if s.trim().is_empty() => None,
+        Some(s) => Some(s),
+        None => existing,
+    }
+}
+
+/// Normalize a slug/key and reject one that normalizes away to nothing —
+/// an empty slug is unroutable and collides with the uniqueness constraint.
+fn require_slug(raw: &str) -> async_graphql::Result<String> {
+    let slug = normalize_slug(raw);
+    if slug.is_empty() {
+        return Err("Slug must contain at least one letter or number".into());
+    }
+    Ok(slug)
 }
 
 /// Slugs and snippet keys are URL-addressable: lowercase, hyphen-separated.

@@ -5,17 +5,23 @@ use crate::{Error, ParticipantRow};
 pub async fn find_all_participants(
     graph: &Graph,
     active_only: Option<bool>,
+    newest_first: bool,
     offset: i64,
     limit: i64,
 ) -> Result<(Vec<ParticipantRow>, i64), Error> {
+    // Neo4j sorts NULL first on DESC, so push undated members to the end.
+    let order = if newest_first {
+        "p.join_date IS NULL, p.join_date DESC"
+    } else {
+        "p.display_name"
+    };
     let (query, count_query) = if let Some(true) = active_only {
         (
-            Query::new(
+            Query::new(format!(
                 "MATCH (p:Participant) WHERE p.is_active = true \
-                 RETURN p ORDER BY p.display_name \
+                 RETURN p ORDER BY {order} \
                  SKIP $offset LIMIT $limit"
-                    .to_string(),
-            )
+            ))
             .param("offset", offset)
             .param("limit", limit),
             Query::new(
@@ -25,12 +31,11 @@ pub async fn find_all_participants(
         )
     } else {
         (
-            Query::new(
+            Query::new(format!(
                 "MATCH (p:Participant) \
-                 RETURN p ORDER BY p.display_name \
+                 RETURN p ORDER BY {order} \
                  SKIP $offset LIMIT $limit"
-                    .to_string(),
-            )
+            ))
             .param("offset", offset)
             .param("limit", limit),
             Query::new("MATCH (p:Participant) RETURN count(p) AS total".to_string()),

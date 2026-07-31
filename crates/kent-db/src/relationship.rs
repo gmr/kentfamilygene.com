@@ -697,6 +697,43 @@ pub async fn find_participants_of_lineage(
     Ok(out)
 }
 
+/// Count participants researching a lineage without materializing the rows —
+/// the lineage browser asks for this on every lineage in one page load.
+pub async fn count_participants_of_lineage(graph: &Graph, lineage_id: &str) -> Result<i64, Error> {
+    count_query(
+        graph,
+        "MATCH (part:Participant)-[:RESEARCHES]->(l:Lineage {id: $id}) \
+         RETURN count(part) AS total",
+        lineage_id,
+    )
+    .await
+}
+
+/// Count participants assigned a haplogroup.
+pub async fn count_participants_of_haplogroup(
+    graph: &Graph,
+    haplogroup_id: &str,
+) -> Result<i64, Error> {
+    count_query(
+        graph,
+        "MATCH (part:Participant)-[:HAS_HAPLOGROUP]->(h:Haplogroup {id: $id}) \
+         RETURN count(part) AS total",
+        haplogroup_id,
+    )
+    .await
+}
+
+async fn count_query(graph: &Graph, cypher: &str, id: &str) -> Result<i64, Error> {
+    let mut result = graph
+        .execute(Query::new(cypher.to_string()).param("id", id))
+        .await?;
+    if let Some(row) = result.next().await? {
+        Ok(row.get::<i64>("total").unwrap_or(0))
+    } else {
+        Ok(0)
+    }
+}
+
 /// Participants assigned a given haplogroup (via HAS_HAPLOGROUP edges).
 pub async fn find_participants_of_haplogroup(
     graph: &Graph,

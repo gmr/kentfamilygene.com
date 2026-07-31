@@ -29,8 +29,9 @@ impl Haplogroup {
     /// Number of participants assigned this haplogroup.
     async fn participant_count(&self, ctx: &Context<'_>) -> async_graphql::Result<i32> {
         let graph = ctx.data::<Graph>()?;
-        let rows = kent_db::relationship::find_participants_of_haplogroup(graph, &self.id).await?;
-        Ok(i32::try_from(rows.len()).unwrap_or(i32::MAX))
+        let total =
+            kent_db::relationship::count_participants_of_haplogroup(graph, &self.id).await?;
+        Ok(i32::try_from(total).unwrap_or(i32::MAX))
     }
 }
 

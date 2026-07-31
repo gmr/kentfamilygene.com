@@ -91,6 +91,8 @@ impl QueryRoot {
         &self,
         ctx: &Context<'_>,
         active_only: Option<bool>,
+        // Order by join date, newest first, instead of by display name.
+        #[graphql(default = false)] newest_first: bool,
         #[graphql(default = 0)] offset: i32,
         #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<ParticipantConnection> {
@@ -99,7 +101,7 @@ impl QueryRoot {
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
-            kent_db::find_all_participants(graph, active_only, offset, limit).await?;
+            kent_db::find_all_participants(graph, active_only, newest_first, offset, limit).await?;
 
         let mut items: Vec<Participant> = rows.into_iter().map(Participant::from).collect();
         privacy::mask_participants(&mut items);
@@ -200,13 +202,28 @@ impl QueryRoot {
         let results =
             kent_db::search::search_all(graph, &query, type_refs.as_deref(), limit).await?;
 
+        // Search bypasses the Person resolver, so masking has to happen here or
+        // a living person hidden everywhere else surfaces by name in results.
+        let public = privacy::is_public(ctx);
         let items = results
             .into_iter()
-            .map(|r| SearchResultItem {
-                id: r.id,
-                result_type: r.result_type,
-                display: r.display,
-                score: r.score,
+            .map(|r| {
+                let masked = public
+                    && r.result_type == "Person"
+                    && privacy::is_living_dates(
+                        r.death_date.as_deref(),
+                        r.birth_date_sort.as_deref(),
+                    );
+                SearchResultItem {
+                    id: r.id,
+                    result_type: r.result_type,
+                    display: if masked {
+                        r.privacy_label.unwrap_or_else(|| "[Living]".to_string())
+                    } else {
+                        r.display
+                    },
+                    score: r.score,
+                }
             })
             .collect();
 
@@ -339,7 +356,7 @@ impl QueryRoot {
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
-            kent_db::find_all_participants(graph, active_only, offset, limit).await?;
+            kent_db::find_all_participants(graph, active_only, false, offset, limit).await?;
 
         let items: Vec<Participant> = rows.into_iter().map(Participant::from).collect();
         let total = total as i32;

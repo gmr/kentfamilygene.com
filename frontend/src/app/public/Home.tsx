@@ -22,10 +22,8 @@ export function Home() {
     { value: s?.regionCount, label: 'Regions' },
     { value: s?.haplogroupCount, label: 'Haplogroups' },
   ];
-  const members = (membersData?.participants.items ?? [])
-    .slice()
-    .sort((a, b) => (b.joinDate ?? '').localeCompare(a.joinDate ?? ''))
-    .slice(0, 8);
+  // Ordered newest-first by the server; see participants(newestFirst:).
+  const members = membersData?.participants.items ?? [];
 
   const regionCounts = new Map<string, number>();
   for (const l of regionData?.lineages.items ?? []) {

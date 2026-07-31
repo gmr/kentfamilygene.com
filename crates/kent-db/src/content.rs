@@ -208,8 +208,12 @@ pub async fn find_nav_items(
     } else {
         ""
     };
+    // Header before footer ('footer' < 'header' alphabetically, so sort on a
+    // rank rather than the raw location string).
     let mut query = Query::new(format!(
-        "MATCH (n:NavItem){where_str} RETURN n ORDER BY n.location, n.sort_order, n.label"
+        "MATCH (n:NavItem){where_str} \
+         RETURN n ORDER BY CASE n.location WHEN 'header' THEN 0 ELSE 1 END, \
+                           n.group_label, n.sort_order, n.label"
     ));
     if let Some(loc) = location {
         query = query.param("location", loc);

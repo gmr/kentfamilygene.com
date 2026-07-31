@@ -1,5 +1,5 @@
 query PublicNewestMembers($limit: Int) {
-  participants(activeOnly: true, limit: $limit) {
+  participants(activeOnly: true, newestFirst: true, limit: $limit) {
     items {
       id
       displayName

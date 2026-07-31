@@ -9,6 +9,7 @@ import { Haplogroups } from './components/Haplogroups';
 import { Places } from './components/Places';
 import { AdminNotes } from './components/AdminNotes';
 import { Pages } from './components/Pages';
+import { PageForm } from './components/PageForm';
 import { Snippets } from './components/Snippets';
 import { Navigation } from './components/Navigation';
 import { LoginPage } from './components/LoginPage';
@@ -61,6 +62,8 @@ export default function App() {
           <Route path="places" element={<Places />} />
           <Route path="notes" element={<AdminNotes />} />
           <Route path="pages" element={<Pages />} />
+          <Route path="pages/new" element={<PageForm />} />
+          <Route path="pages/:id" element={<PageForm />} />
           <Route path="snippets" element={<Snippets />} />
           <Route path="navigation" element={<Navigation />} />
         </Route>

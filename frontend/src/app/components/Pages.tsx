@@ -1,13 +1,8 @@
-import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Eye, EyeOff, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +16,6 @@ import {
 } from './ui/alert-dialog';
 import {
   usePagesQuery,
-  useCreatePageMutation,
   useUpdatePageMutation,
   useDeletePageMutation,
   type PagesQuery,
@@ -29,92 +23,15 @@ import {
 
 type Page = PagesQuery['pages'][number];
 
-interface Draft {
-  slug: string;
-  title: string;
-  summary: string;
-  body: string;
-  isPublished: boolean;
-}
-
-const EMPTY: Draft = { slug: '', title: '', summary: '', body: '', isPublished: false };
-
-function slugify(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
 export function Pages() {
   const [{ data, fetching, error }, refetch] = usePagesQuery({
     requestPolicy: 'cache-and-network',
   });
-  const [, createPage] = useCreatePageMutation();
   const [, updatePage] = useUpdatePageMutation();
   const [, deletePage] = useDeletePageMutation();
-
-  const [editing, setEditing] = useState<Page | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [saving, setSaving] = useState(false);
+  const navigate = useNavigate();
 
   const pages = data?.pages ?? [];
-  const open = creating || editing !== null;
-
-  const openCreate = () => {
-    setDraft(EMPTY);
-    setCreating(true);
-  };
-
-  const openEdit = (page: Page) => {
-    setDraft({
-      slug: page.slug,
-      title: page.title,
-      summary: page.summary ?? '',
-      body: page.body,
-      isPublished: page.isPublished,
-    });
-    setEditing(page);
-  };
-
-  const close = () => {
-    setCreating(false);
-    setEditing(null);
-    setDraft(EMPTY);
-  };
-
-  const save = async () => {
-    if (!draft.title.trim()) {
-      toast.error('Title is required');
-      return;
-    }
-    const slug = slugify(draft.slug || draft.title);
-    if (!slug) {
-      toast.error('Slug is required');
-      return;
-    }
-    setSaving(true);
-    const input = {
-      slug,
-      title: draft.title,
-      body: draft.body,
-      summary: draft.summary || undefined,
-      isPublished: draft.isPublished,
-    };
-    const result = editing
-      ? await updatePage({ id: editing.id, input })
-      : await createPage({ input });
-    setSaving(false);
-    if (result.error) {
-      toast.error(result.error.message.replace('[GraphQL] ', ''));
-      return;
-    }
-    toast.success(editing ? 'Page updated' : 'Page created');
-    close();
-    refetch({ requestPolicy: 'network-only' });
-  };
 
   const togglePublished = async (page: Page) => {
     const result = await updatePage({
@@ -148,7 +65,7 @@ export function Pages() {
             Standalone Markdown pages served at /&lt;slug&gt; on the public site.
           </p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
+        <Button onClick={() => navigate('/admin/pages/new')} className="gap-2">
           <Plus className="h-4 w-4" />
           New page
         </Button>
@@ -192,7 +109,7 @@ export function Pages() {
               >
                 {page.isPublished ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => openEdit(page)} title="Edit">
+              <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/pages/${page.id}`)} title="Edit">
                 <Pencil className="h-4 w-4" />
               </Button>
               <AlertDialog>
@@ -219,83 +136,6 @@ export function Pages() {
         ))}
       </div>
 
-      <Dialog open={open} onOpenChange={(o) => !o && close()}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit page' : 'New page'}</DialogTitle>
-          </DialogHeader>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="page-title">Title</Label>
-                <Input
-                  id="page-title"
-                  value={draft.title}
-                  onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="page-slug">Slug</Label>
-                <Input
-                  id="page-slug"
-                  value={draft.slug}
-                  placeholder={slugify(draft.title) || 'about'}
-                  onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Public URL: /{slugify(draft.slug || draft.title) || '…'}
-                </p>
-              </div>
-              <div>
-                <Label htmlFor="page-summary">Summary (optional)</Label>
-                <Input
-                  id="page-summary"
-                  value={draft.summary}
-                  onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label htmlFor="page-body">Body (Markdown)</Label>
-                <Textarea
-                  id="page-body"
-                  rows={18}
-                  className="font-mono text-sm"
-                  value={draft.body}
-                  onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                />
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={draft.isPublished}
-                  onChange={(e) => setDraft({ ...draft, isPublished: e.target.checked })}
-                />
-                Published (visible to anonymous visitors)
-              </label>
-            </div>
-
-            <div>
-              <Label>Preview</Label>
-              <div className="mt-2 h-[32rem] overflow-y-auto rounded-md border border-gray-200 bg-white p-4">
-                <h1 className="mb-3 text-2xl font-semibold">{draft.title || 'Untitled'}</h1>
-                <div className="kent-prose">
-                  <ReactMarkdown>{draft.body}</ReactMarkdown>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={close}>
-              Cancel
-            </Button>
-            <Button onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : editing ? 'Save changes' : 'Create page'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

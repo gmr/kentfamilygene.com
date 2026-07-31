@@ -11,6 +11,11 @@ pub struct SearchResult {
     pub result_type: String,
     pub display: String,
     pub score: f64,
+    /// Person hits only — carried so the domain layer can decide whether the
+    /// name has to be privacy-masked without a second round-trip per hit.
+    pub death_date: Option<String>,
+    pub birth_date_sort: Option<String>,
+    pub privacy_label: Option<String>,
 }
 
 /// Ensure the full-text search indexes exist.
@@ -73,11 +78,20 @@ pub async fn search_all(
             _ => continue,
         };
 
+        // Person hits carry the fields the privacy check needs; other labels
+        // return nulls so every branch has the same row shape.
+        let privacy_expr = if *search_type == "person" {
+            "node.death_date AS death_date, node.birth_date_sort AS birth_date_sort, \
+             node.privacy_label AS privacy_label"
+        } else {
+            "null AS death_date, null AS birth_date_sort, null AS privacy_label"
+        };
+
         let query_str = format!(
             "CALL db.index.fulltext.queryNodes('{index_name}', $query) \
              YIELD node, score \
              RETURN node.id AS id, labels(node)[0] AS label, \
-                    {display_expr} AS display, score \
+                    {display_expr} AS display, score, {privacy_expr} \
              ORDER BY score DESC LIMIT $limit"
         );
 
@@ -92,12 +106,17 @@ pub async fn search_all(
             let display: String = row.get("display").unwrap_or_default();
             let score: f64 = row.get("score").unwrap_or(0.0);
 
+            let non_empty = |k: &str| row.get::<String>(k).ok().filter(|s| !s.is_empty());
+
             results.push(SearchResult {
                 id,
                 label: rl,
                 result_type: label.to_string(),
                 display,
                 score,
+                death_date: non_empty("death_date"),
+                birth_date_sort: non_empty("birth_date_sort"),
+                privacy_label: non_empty("privacy_label"),
             });
         }
     }
