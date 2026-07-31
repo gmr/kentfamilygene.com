@@ -1,5 +1,6 @@
 pub mod admin_note;
 pub mod connection;
+pub mod content;
 pub mod dna_test;
 pub mod enums;
 pub mod haplogroup;
@@ -12,6 +13,7 @@ pub mod relationships;
 
 pub use admin_note::*;
 pub use connection::*;
+pub use content::*;
 pub use dna_test::*;
 pub use enums::*;
 pub use haplogroup::*;

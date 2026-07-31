@@ -8,6 +8,7 @@ pub use neo4rs::Graph as Neo4jGraph;
 pub use neo4rs::Query as Neo4jQuery;
 
 pub mod admin_note;
+pub mod content;
 pub mod dna_test;
 pub mod haplogroup;
 pub mod lineage;
@@ -20,6 +21,7 @@ pub mod search;
 
 // Re-export entity functions at crate root for convenience.
 pub use admin_note::*;
+pub use content::*;
 pub use dna_test::*;
 pub use haplogroup::*;
 pub use lineage::*;
@@ -140,6 +142,47 @@ pub struct AdminNoteRow {
     pub text: String,
     pub created_date: Option<String>,
     pub resolved: bool,
+}
+
+/// Row returned from Cypher queries for Page nodes (CMS).
+#[derive(Debug, Clone, Serialize)]
+pub struct PageRow {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    /// Markdown source.
+    pub body: String,
+    pub summary: Option<String>,
+    pub is_published: bool,
+    pub created_date: Option<String>,
+    pub updated_date: Option<String>,
+}
+
+/// Row returned from Cypher queries for Snippet nodes (CMS).
+#[derive(Debug, Clone, Serialize)]
+pub struct SnippetRow {
+    pub id: String,
+    /// Stable lookup key referenced from the frontend, e.g. "footer-blurb".
+    pub key: String,
+    pub title: Option<String>,
+    /// Markdown source.
+    pub body: String,
+    pub created_date: Option<String>,
+    pub updated_date: Option<String>,
+}
+
+/// Row returned from Cypher queries for NavItem nodes (CMS).
+#[derive(Debug, Clone, Serialize)]
+pub struct NavItemRow {
+    pub id: String,
+    /// "header" or "footer".
+    pub location: String,
+    /// Footer column heading; unused for header items.
+    pub group_label: Option<String>,
+    pub label: String,
+    /// Internal path ("/lineages", "/about") or absolute URL.
+    pub target: String,
+    pub sort_order: i64,
 }
 
 /// Unified error type for kent-db operations.

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCircle, Dna, MapPin, StickyNote, Menu, X, ExternalLink, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, UserCircle, Dna, MapPin, StickyNote, FileText, Quote, Link2, Menu, X, ExternalLink, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { cn } from './ui/utils';
@@ -15,6 +15,9 @@ const navItems = [
   { to: '/admin/haplogroups', label: 'Haplogroups', icon: Dna },
   { to: '/admin/places', label: 'Places', icon: MapPin },
   { to: '/admin/notes', label: 'Notes', icon: StickyNote },
+  { to: '/admin/pages', label: 'Pages', icon: FileText },
+  { to: '/admin/snippets', label: 'Snippets', icon: Quote },
+  { to: '/admin/navigation', label: 'Navigation', icon: Link2 },
 ];
 
 export function AdminLayout() {

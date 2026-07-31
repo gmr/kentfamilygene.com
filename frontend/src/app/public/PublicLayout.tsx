@@ -1,19 +1,35 @@
 import { NavLink, Link, Outlet } from 'react-router-dom';
-import { useStatsQuery } from '../../generated/graphql';
+import { useStatsQuery, useNavItemsQuery } from '../../generated/graphql';
+import { NavTarget, Snippet, groupFooterItems, isExternal, type CmsNavItem } from './cms';
 import './public.css';
 
 const LAST_UPDATED = 'Jul 2026';
 
-const NAV = [
-  { to: '/', label: 'Home', end: true },
-  { to: '/lineages', label: 'Lineages', end: false },
-  { to: '/search', label: 'Search', end: false },
-  { to: '/haplogroups', label: 'Haplogroups', end: false },
+/** Shown until navigation is managed in the admin CMS. */
+const FALLBACK_HEADER: CmsNavItem[] = [
+  { id: 'f-home', location: 'header', groupLabel: null, label: 'Home', target: '/', sortOrder: 0 },
+  { id: 'f-lin', location: 'header', groupLabel: null, label: 'Lineages', target: '/lineages', sortOrder: 1 },
+  { id: 'f-search', location: 'header', groupLabel: null, label: 'Search', target: '/search', sortOrder: 2 },
+  { id: 'f-haplo', location: 'header', groupLabel: null, label: 'Haplogroups', target: '/haplogroups', sortOrder: 3 },
+];
+
+const FALLBACK_FOOTER: CmsNavItem[] = [
+  { id: 'f-fhome', location: 'footer', groupLabel: 'Navigate', label: 'Home', target: '/', sortOrder: 0 },
+  { id: 'f-flin', location: 'footer', groupLabel: 'Navigate', label: 'Lineages', target: '/lineages', sortOrder: 1 },
+  { id: 'f-fsearch', location: 'footer', groupLabel: 'Navigate', label: 'Search', target: '/search', sortOrder: 2 },
+  { id: 'f-fhaplo', location: 'footer', groupLabel: 'Navigate', label: 'Haplogroups', target: '/haplogroups', sortOrder: 3 },
 ];
 
 export function PublicLayout() {
   const [{ data }] = useStatsQuery();
   const personCount = data?.stats?.personCount;
+
+  const [{ data: navData }] = useNavItemsQuery();
+  const managed = navData?.navItems ?? [];
+  const headerItems = managed.filter((i) => i.location === 'header');
+  const footerItems = managed.filter((i) => i.location === 'footer');
+  const nav = headerItems.length > 0 ? headerItems : FALLBACK_HEADER;
+  const footerGroups = groupFooterItems(footerItems.length > 0 ? footerItems : FALLBACK_FOOTER);
 
   return (
     <div className="kent-root">
@@ -95,11 +111,22 @@ export function PublicLayout() {
             style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <span className="kent-nav-items" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {NAV.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.end} className="kent-navlink">
-                  {item.label}
-                </NavLink>
-              ))}
+              {nav.map((item) =>
+                isExternal(item.target) ? (
+                  <NavTarget key={item.id} target={item.target} className="kent-navlink">
+                    {item.label}
+                  </NavTarget>
+                ) : (
+                  <NavLink
+                    key={item.id}
+                    to={item.target}
+                    end={item.target === '/'}
+                    className="kent-navlink"
+                  >
+                    {item.label}
+                  </NavLink>
+                ),
+              )}
             </span>
             <Link
               to="/#participate"
@@ -134,7 +161,7 @@ export function PublicLayout() {
             margin: '0 auto',
             padding: '44px 22px 30px',
             display: 'grid',
-            gridTemplateColumns: '2fr 1fr 1fr',
+            gridTemplateColumns: `2fr${' 1fr'.repeat(Math.max(footerGroups.length, 1))}`,
             gap: 32,
           }}
         >
@@ -149,37 +176,34 @@ export function PublicLayout() {
             >
               Kent Family &amp; DNA Project
             </div>
-            <p
+            <div
               style={{
-                margin: 0,
                 color: '#555',
                 fontSize: 14.5,
                 maxWidth: 420,
                 lineHeight: 1.6,
               }}
             >
-              A free, volunteer-run community of genealogy researchers collaborating on the KENT
-              surname, connecting documented lineages with Y-DNA and autosomal evidence.
-            </p>
-          </div>
-          <div>
-            <div style={footerHeadStyle}>Learn more</div>
-            <div style={footerLinkColStyle}>
-              <a href="#" style={{ color: '#333' }}>Background</a>
-              <a href="#" style={{ color: '#333' }}>Project goals</a>
-              <a href="#" style={{ color: '#333' }}>FAQ</a>
-              <a href="#" style={{ color: '#333' }}>FamilyTreeDNA group</a>
+              <Snippet keyName="footer-blurb">
+                <p style={{ margin: 0 }}>
+                  A free, volunteer-run community of genealogy researchers collaborating on the
+                  KENT surname, connecting documented lineages with Y-DNA and autosomal evidence.
+                </p>
+              </Snippet>
             </div>
           </div>
-          <div>
-            <div style={footerHeadStyle}>Navigate</div>
-            <div style={footerLinkColStyle}>
-              <Link to="/" style={{ color: '#333' }}>Home</Link>
-              <Link to="/lineages" style={{ color: '#333' }}>Lineages</Link>
-              <Link to="/search" style={{ color: '#333' }}>Search</Link>
-              <Link to="/haplogroups" style={{ color: '#333' }}>Haplogroups</Link>
+          {footerGroups.map((group) => (
+            <div key={group.heading}>
+              <div style={footerHeadStyle}>{group.heading}</div>
+              <div style={footerLinkColStyle}>
+                {group.items.map((item) => (
+                  <NavTarget key={item.id} target={item.target} style={{ color: '#333' }}>
+                    {item.label}
+                  </NavTarget>
+                ))}
+              </div>
             </div>
-          </div>
+          ))}
         </div>
         <div style={{ borderTop: '1px solid #e4e4e4' }}>
           <div

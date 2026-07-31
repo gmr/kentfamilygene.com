@@ -8,6 +8,9 @@ import { Participants } from './components/Participants';
 import { Haplogroups } from './components/Haplogroups';
 import { Places } from './components/Places';
 import { AdminNotes } from './components/AdminNotes';
+import { Pages } from './components/Pages';
+import { Snippets } from './components/Snippets';
+import { Navigation } from './components/Navigation';
 import { LoginPage } from './components/LoginPage';
 import { RequireAuth } from './components/RequireAuth';
 import { PersonForm } from './components/PersonForm';
@@ -18,6 +21,7 @@ import { LineageBrowser } from './public/LineageBrowser';
 import { LineageDetail } from './public/LineageDetail';
 import { Search as PublicSearch } from './public/Search';
 import { Haplogroups as PublicHaplogroups } from './public/Haplogroups';
+import { CmsPage } from './public/CmsPage';
 
 export default function App() {
   return (
@@ -30,6 +34,8 @@ export default function App() {
           <Route path="/lineages/:id" element={<LineageDetail />} />
           <Route path="/search" element={<PublicSearch />} />
           <Route path="/haplogroups" element={<PublicHaplogroups />} />
+          {/* CMS-managed pages. Last, so it never shadows a built-in route. */}
+          <Route path="/:slug" element={<CmsPage />} />
         </Route>
 
         {/* Admin */}
@@ -54,6 +60,9 @@ export default function App() {
           <Route path="haplogroups" element={<Haplogroups />} />
           <Route path="places" element={<Places />} />
           <Route path="notes" element={<AdminNotes />} />
+          <Route path="pages" element={<Pages />} />
+          <Route path="snippets" element={<Snippets />} />
+          <Route path="navigation" element={<Navigation />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

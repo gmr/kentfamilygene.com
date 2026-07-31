@@ -227,6 +227,53 @@ impl QueryRoot {
         })
     }
 
+    // ── CMS content ────────────────────────────────────────────────
+
+    /// List CMS pages. Drafts are only visible to authenticated callers.
+    async fn pages(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Page>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::find_all_pages(graph, privacy::is_public(ctx)).await?;
+        Ok(rows.into_iter().map(Page::from).collect())
+    }
+
+    /// Fetch a page by slug. A draft resolves to null unless authenticated.
+    async fn page(&self, ctx: &Context<'_>, slug: String) -> async_graphql::Result<Option<Page>> {
+        let graph = ctx.data::<Graph>()?;
+        let row = kent_db::find_page_by_slug(graph, &slug).await?;
+        Ok(row
+            .filter(|p| p.is_published || !privacy::is_public(ctx))
+            .map(Page::from))
+    }
+
+    /// List reusable content snippets.
+    async fn snippets(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Snippet>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::find_all_snippets(graph).await?;
+        Ok(rows.into_iter().map(Snippet::from).collect())
+    }
+
+    /// Fetch a single snippet by key.
+    async fn snippet(
+        &self,
+        ctx: &Context<'_>,
+        key: String,
+    ) -> async_graphql::Result<Option<Snippet>> {
+        let graph = ctx.data::<Graph>()?;
+        let row = kent_db::find_snippet_by_key(graph, &key).await?;
+        Ok(row.map(Snippet::from))
+    }
+
+    /// Managed navigation links, optionally filtered to "header" or "footer".
+    async fn nav_items(
+        &self,
+        ctx: &Context<'_>,
+        location: Option<String>,
+    ) -> async_graphql::Result<Vec<NavItem>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::find_nav_items(graph, location.as_deref()).await?;
+        Ok(rows.into_iter().map(NavItem::from).collect())
+    }
+
     // ── Admin queries (auth required, unmasked data) ───────────────
 
     /// List persons (admin, unmasked).

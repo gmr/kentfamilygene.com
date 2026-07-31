@@ -1,0 +1,18 @@
+query Snippets {
+  snippets {
+    id
+    key
+    title
+    body
+    updatedDate
+  }
+}
+
+query Snippet($key: String!) {
+  snippet(key: $key) {
+    id
+    key
+    title
+    body
+  }
+}

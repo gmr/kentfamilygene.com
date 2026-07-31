@@ -287,6 +287,40 @@ type Stats {
   placeCount: Int!
 }
 
+# ── CMS ─────────────────────────────────────────────────────────────
+
+type Page {
+  id: String!
+  slug: String!
+  title: String!
+  # Markdown source
+  body: String!
+  summary: String
+  isPublished: Boolean!
+  createdDate: String
+  updatedDate: String
+}
+
+type Snippet {
+  id: String!
+  key: String!
+  title: String
+  # Markdown source
+  body: String!
+  createdDate: String
+  updatedDate: String
+}
+
+type NavItem {
+  id: String!
+  # "header" or "footer"
+  location: String!
+  groupLabel: String
+  label: String!
+  target: String!
+  sortOrder: Int!
+}
+
 # ── Queries ─────────────────────────────────────────────────────────
 
 type Query {
@@ -301,6 +335,13 @@ type Query {
   places(country: String, offset: Int = 0, limit: Int = 50): PlaceConnection!
   search(query: String!, types: [SearchType!], limit: Int = 20): SearchResponse!
   stats: Stats!
+
+  # CMS (drafts visible only when authenticated)
+  pages: [Page!]!
+  page(slug: String!): Page
+  snippets: [Snippet!]!
+  snippet(key: String!): Snippet
+  navItems(location: String): [NavItem!]!
 
   # Admin (auth required, full data)
   adminPersons(surname: String, includePlaceholders: Boolean, offset: Int = 0, limit: Int = 50): PersonConnection!
@@ -486,6 +527,42 @@ input UpdateAdminNoteInput {
   resolved: Boolean
 }
 
+input CreatePageInput {
+  slug: String!
+  title: String!
+  body: String!
+  summary: String
+  isPublished: Boolean
+}
+
+input UpdatePageInput {
+  slug: String
+  title: String
+  body: String
+  summary: String
+  isPublished: Boolean
+}
+
+input CreateSnippetInput {
+  key: String!
+  title: String
+  body: String!
+}
+
+input UpdateSnippetInput {
+  key: String
+  title: String
+  body: String
+}
+
+input NavItemInput {
+  location: String!
+  groupLabel: String
+  label: String!
+  target: String!
+  sortOrder: Int
+}
+
 # ── Mutations ───────────────────────────────────────────────────────
 
 type Mutation {
@@ -543,4 +620,15 @@ type Mutation {
   updateAdminNote(id: String!, input: UpdateAdminNoteInput!): AdminNote!
   deleteAdminNote(id: String!): Boolean!
   attachAdminNote(noteId: String!, targetId: String!, targetType: AnnotationTarget!): Boolean!
+
+  # CMS
+  createPage(input: CreatePageInput!): Page!
+  updatePage(id: String!, input: UpdatePageInput!): Page!
+  deletePage(id: String!): Boolean!
+  createSnippet(input: CreateSnippetInput!): Snippet!
+  updateSnippet(id: String!, input: UpdateSnippetInput!): Snippet!
+  deleteSnippet(id: String!): Boolean!
+  createNavItem(input: NavItemInput!): NavItem!
+  updateNavItem(id: String!, input: NavItemInput!): NavItem!
+  deleteNavItem(id: String!): Boolean!
 }
