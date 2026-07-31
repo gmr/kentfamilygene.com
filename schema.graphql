@@ -68,6 +68,14 @@ type Lineage {
   newLineageDate: String
   createdDate: String
   updatedDate: String
+  # Resolvers (privacy-masked for public)
+  migrationStops: [MigrationStop!]!
+  assignedPersons: [LineagePerson!]!
+  brickWallAncestor: Person
+  participants: [Participant!]!
+  participantCount: Int!
+  haplogroups: [Haplogroup!]!
+  hasYDnaParticipant: Boolean!
 }
 
 type Person {
@@ -140,6 +148,9 @@ type Haplogroup {
   abbreviation: String
   confirmationStatus: String
   haplogroupType: String
+  # Resolvers (privacy-masked for public)
+  participants: [Participant!]!
+  participantCount: Int!
 }
 
 type DnaTest {
@@ -203,6 +214,19 @@ type GeneticMatchEntry {
   notes: String
 }
 
+type LineagePerson {
+  person: Person!
+  role: String
+  generationNumber: Int
+  certainty: String
+}
+
+type MigrationStop {
+  place: Place!
+  stopOrder: Int
+  role: String
+}
+
 # ── Connections (Pagination) ────────────────────────────────────────
 
 type LineageConnection {
@@ -256,6 +280,7 @@ type SearchResponse {
 
 type Stats {
   lineageCount: Int!
+  regionCount: Int!
   personCount: Int!
   participantCount: Int!
   haplogroupCount: Int!

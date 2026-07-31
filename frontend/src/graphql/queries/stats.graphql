@@ -1,6 +1,7 @@
 query Stats {
   stats {
     lineageCount
+    regionCount
     personCount
     participantCount
     haplogroupCount

@@ -24,8 +24,10 @@ import {
   useCreateHaplogroupMutation,
   useUpdateHaplogroupMutation,
   useDeleteHaplogroupMutation,
-  type Haplogroup,
+  type HaplogroupsQuery,
 } from '../../generated/graphql';
+
+type HaplogroupListItem = HaplogroupsQuery['haplogroups']['items'][number];
 
 const haplogroupSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -40,7 +42,7 @@ type HaplogroupFormData = z.infer<typeof haplogroupSchema>;
 export function Haplogroups() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [editingHaplogroup, setEditingHaplogroup] = useState<Haplogroup | null>(null);
+  const [editingHaplogroup, setEditingHaplogroup] = useState<HaplogroupListItem | null>(null);
 
   const [{ data, fetching, error }, refetchHaplogroups] = useHaplogroupsQuery();
 

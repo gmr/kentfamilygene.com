@@ -30,8 +30,11 @@ pub async fn ensure_search_indexes(graph: &Graph) -> Result<(), Error> {
          FOR (n:Haplogroup) ON EACH [n.name, n.subclade, n.abbreviation]",
     ];
 
+    // Use `run` (not `execute`): `execute` returns a stream that must be
+    // consumed for the statement to actually run, so DDL issued via `execute`
+    // without pulling the stream silently never executes.
     for idx_query in &indexes {
-        let _ = graph.execute(Query::new(idx_query.to_string())).await?;
+        graph.run(Query::new(idx_query.to_string())).await?;
     }
 
     Ok(())
@@ -113,12 +116,12 @@ pub async fn search_all(
 /// Fetch aggregate stats across all node types.
 pub async fn get_stats(graph: &Graph) -> Result<Stats, Error> {
     let query = Query::new(
-        "OPTIONAL MATCH (l:Lineage) WITH count(l) AS lineages \
-         OPTIONAL MATCH (p:Person) WITH lineages, count(p) AS persons \
-         OPTIONAL MATCH (part:Participant) WITH lineages, persons, count(part) AS participants \
-         OPTIONAL MATCH (h:Haplogroup) WITH lineages, persons, participants, count(h) AS haplogroups \
-         OPTIONAL MATCH (pl:Place) WITH lineages, persons, participants, haplogroups, count(pl) AS places \
-         RETURN lineages, persons, participants, haplogroups, places"
+        "OPTIONAL MATCH (l:Lineage) WITH count(l) AS lineages, count(DISTINCT l.region) AS regions \
+         OPTIONAL MATCH (p:Person) WITH lineages, regions, count(p) AS persons \
+         OPTIONAL MATCH (part:Participant) WITH lineages, regions, persons, count(part) AS participants \
+         OPTIONAL MATCH (h:Haplogroup) WITH lineages, regions, persons, participants, count(h) AS haplogroups \
+         OPTIONAL MATCH (pl:Place) WITH lineages, regions, persons, participants, haplogroups, count(pl) AS places \
+         RETURN lineages, regions, persons, participants, haplogroups, places"
             .to_string(),
     );
 
@@ -126,6 +129,7 @@ pub async fn get_stats(graph: &Graph) -> Result<Stats, Error> {
     if let Some(row) = result.next().await? {
         Ok(Stats {
             lineage_count: row.get("lineages").unwrap_or(0),
+            region_count: row.get("regions").unwrap_or(0),
             person_count: row.get("persons").unwrap_or(0),
             participant_count: row.get("participants").unwrap_or(0),
             haplogroup_count: row.get("haplogroups").unwrap_or(0),
@@ -139,6 +143,7 @@ pub async fn get_stats(graph: &Graph) -> Result<Stats, Error> {
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Stats {
     pub lineage_count: i64,
+    pub region_count: i64,
     pub person_count: i64,
     pub participant_count: i64,
     pub haplogroup_count: i64,

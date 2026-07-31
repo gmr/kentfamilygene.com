@@ -1,6 +1,6 @@
 use async_graphql::SimpleObject;
 
-use super::{Lineage, Participant, Person};
+use super::{Lineage, Participant, Person, Place};
 
 /// Wraps a parent Person with the PARENT_OF edge's relationship_type.
 #[derive(SimpleObject, Debug, Clone)]
@@ -33,6 +33,23 @@ pub struct LineageAssignment {
 pub struct LineageMembership {
     pub lineage: Lineage,
     pub branch_label: Option<String>,
+}
+
+/// Lineage → Person via BELONGS_TO edge (a documented ancestor of the line).
+#[derive(SimpleObject, Debug, Clone)]
+pub struct LineagePerson {
+    pub person: Person,
+    pub role: Option<String>,
+    pub generation_number: Option<i32>,
+    pub certainty: Option<String>,
+}
+
+/// An ordered stop on a lineage's migration path (Lineage → Place via MIGRATION_STOP).
+#[derive(SimpleObject, Debug, Clone)]
+pub struct MigrationStop {
+    pub place: Place,
+    pub stop_order: Option<i32>,
+    pub role: Option<String>,
 }
 
 /// Wraps a genetic match between two participants with match metadata.

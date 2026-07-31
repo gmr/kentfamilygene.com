@@ -1,0 +1,45 @@
+query PublicLineages {
+  lineages {
+    items {
+      id
+      displayName
+      region
+      originState
+      lineageNumber
+      statusNote
+      isNew
+      participantCount
+      hasYDnaParticipant
+      brickWallAncestor {
+        id
+        givenName
+        surname
+        privacyLabel
+        isLiving
+        isImmigrantAncestor
+        birthDate
+        birthDateModifier
+        birthPlace
+        deathDate
+        deathDateModifier
+        deathPlace
+      }
+      haplogroups {
+        id
+        abbreviation
+        name
+      }
+      migrationStops {
+        stopOrder
+        place {
+          id
+          name
+          county
+          state
+          country
+        }
+      }
+    }
+    total
+  }
+}

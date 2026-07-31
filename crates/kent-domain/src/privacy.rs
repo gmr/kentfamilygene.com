@@ -1,4 +1,43 @@
+use async_graphql::Context;
+
+use crate::auth::AuthContext;
 use crate::types::{Participant, Person};
+
+/// True when the request is unauthenticated (public) and personal data must be
+/// masked. Defaults to masking when no auth context is present (fail closed).
+pub fn is_public(ctx: &Context<'_>) -> bool {
+    ctx.data::<AuthContext>()
+        .map(|a| !a.is_authenticated)
+        .unwrap_or(true)
+}
+
+/// Mask a person only for public (unauthenticated) requests.
+pub fn mask_person_for_ctx(ctx: &Context<'_>, person: &mut Person) {
+    if is_public(ctx) {
+        mask_person(person);
+    }
+}
+
+/// Mask a list of persons only for public (unauthenticated) requests.
+pub fn mask_persons_for_ctx(ctx: &Context<'_>, persons: &mut [Person]) {
+    if is_public(ctx) {
+        mask_persons(persons);
+    }
+}
+
+/// Strip participant PII only for public (unauthenticated) requests.
+pub fn mask_participant_for_ctx(ctx: &Context<'_>, participant: &mut Participant) {
+    if is_public(ctx) {
+        mask_participant(participant);
+    }
+}
+
+/// Strip participant PII from a list only for public (unauthenticated) requests.
+pub fn mask_participants_for_ctx(ctx: &Context<'_>, participants: &mut [Participant]) {
+    if is_public(ctx) {
+        mask_participants(participants);
+    }
+}
 
 /// Determine if a person should be treated as living (and thus privacy-masked).
 fn is_living(person: &Person) -> bool {

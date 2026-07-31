@@ -219,6 +219,7 @@ impl QueryRoot {
         let s = kent_db::search::get_stats(graph).await?;
         Ok(Stats {
             lineage_count: s.lineage_count as i32,
+            region_count: s.region_count as i32,
             person_count: s.person_count as i32,
             participant_count: s.participant_count as i32,
             haplogroup_count: s.haplogroup_count as i32,
@@ -361,6 +362,7 @@ pub struct SearchResponse {
 #[derive(SimpleObject, Debug)]
 pub struct Stats {
     pub lineage_count: i32,
+    pub region_count: i32,
     pub person_count: i32,
     pub participant_count: i32,
     pub haplogroup_count: i32,
