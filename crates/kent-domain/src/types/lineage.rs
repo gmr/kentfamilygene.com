@@ -68,11 +68,18 @@ impl Lineage {
         let graph = ctx.data::<Graph>()?;
         // find_persons_of_lineage is ordered by generation ascending.
         let rows = kent_db::relationship::find_persons_of_lineage(graph, &self.id).await?;
-        Ok(rows.into_iter().next().map(|(p, _, _, _)| {
-            let mut person = Person::from(p);
-            privacy::mask_person_for_ctx(ctx, &mut person);
-            person
-        }))
+        // Skip the importer's role placeholders ("Father", "y-DNA Participant"
+        // and friends: a privacy_label with no name). They occupy the earliest
+        // generations of every chain, so taking row 0 blindly reported the
+        // brick wall as "y-DNA Participant" instead of a documented ancestor.
+        Ok(rows
+            .into_iter()
+            .find(|(p, _, _, _)| !p.given_name.trim().is_empty() || !p.surname.trim().is_empty())
+            .map(|(p, _, _, _)| {
+                let mut person = Person::from(p);
+                privacy::mask_person_for_ctx(ctx, &mut person);
+                person
+            }))
     }
 
     /// Project members / researchers who research this lineage (PII-masked for public).

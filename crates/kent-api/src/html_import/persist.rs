@@ -1,14 +1,8 @@
 use kent_db::Neo4jGraph as Graph;
 use kent_db::Neo4jQuery as Query;
-use uuid::Uuid;
 
-use super::dedup::DedupContext;
+use super::dedup::{DedupContext, deterministic_id};
 use super::types::*;
-
-/// Namespace UUID for deterministic ID generation (UUID v5).
-const KENT_NAMESPACE: Uuid = Uuid::from_bytes([
-    0x6b, 0x65, 0x6e, 0x74, 0x2d, 0x66, 0x61, 0x6d, 0x69, 0x6c, 0x79, 0x2d, 0x64, 0x6e, 0x61, 0x21,
-]);
 
 /// Canonicalize a value before it becomes part of a deterministic ID: trim,
 /// collapse whitespace runs, lowercase.
@@ -18,11 +12,6 @@ fn canonical_key(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-/// Generate a deterministic UUID from a namespace + key string.
-fn deterministic_id(key: &str) -> String {
-    Uuid::new_v5(&KENT_NAMESPACE, key.as_bytes()).to_string()
 }
 
 /// Normalize an ALL-CAPS (or lower-case) name/place to Title Case. Preserves
@@ -45,30 +34,56 @@ fn title_case_opt(input: &Option<String>) -> Option<String> {
         .map(|s| title_case(s))
 }
 
+/// Acronyms and Roman numerals the general title-caser would mangle:
+/// "Y-DNA" -> "Y-Dna", "III" -> "Iii". Matched case-insensitively; the entry
+/// here is the spelling that gets stored.
+const PRESERVED_TOKENS: &[&str] = &[
+    "Y-DNA", "MTDNA", "DNA", "SNP", "STR", "USA", "II", "III", "IV", "VI", "VII", "VIII",
+];
+
 fn title_case_token(token: &str) -> String {
+    // Compare without surrounding punctuation so "Y-DNA," still matches, then
+    // restore whatever was trimmed.
+    let core = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '-');
+    if !core.is_empty()
+        && let Some(canon) = PRESERVED_TOKENS
+            .iter()
+            .find(|a| a.eq_ignore_ascii_case(core))
+    {
+        return token.replacen(core, canon, 1);
+    }
+
     // Preserve genuine abbreviations only: 2-letter all-caps state/country codes
-    // (GA, NY, UK) and "USA". Do NOT preserve generic 3-letter words like "NEW".
+    // (GA, NY, UK). Do NOT preserve generic 3-letter words like "NEW".
     let all_caps_alpha = !token.is_empty()
         && token
             .chars()
             .all(|c| c.is_ascii_uppercase() && c.is_ascii_alphabetic());
-    if token == "USA" || (all_caps_alpha && token.len() == 2) {
+    if all_caps_alpha && token.len() == 2 {
         return token.to_string();
     }
 
+    let chars: Vec<char> = token.chars().collect();
     let mut out = String::with_capacity(token.len());
     let mut at_boundary = true;
-    for ch in token.chars() {
+    let mut after_apostrophe = false;
+    for (i, &ch) in chars.iter().enumerate() {
         if ch.is_alphanumeric() {
-            if at_boundary {
+            // "Mother's", not "Mother'S": a lone letter closing the token after
+            // an apostrophe is a possessive, not the start of a name like
+            // "O'Sullivan".
+            let last_alnum = !chars[i + 1..].iter().any(|c| c.is_alphanumeric());
+            if at_boundary && !(after_apostrophe && last_alnum) {
                 out.extend(ch.to_uppercase());
             } else {
                 out.extend(ch.to_lowercase());
             }
             at_boundary = false;
+            after_apostrophe = false;
         } else {
             out.push(ch);
-            at_boundary = matches!(ch, '-' | '\'' | '\u{2019}' | '.' | '(' | '/');
+            after_apostrophe = matches!(ch, '\'' | '\u{2019}');
+            at_boundary = after_apostrophe || matches!(ch, '-' | '.' | '(' | '/');
         }
     }
 
@@ -123,6 +138,9 @@ pub async fn persist_to_neo4j(graph: &Graph, doc: &ParsedDocument) {
         }
     }
 
+    tracing::info!("Attaching spouses to their partner's lineage...");
+    stats.relationships += attach_spouses_to_lineages(graph).await;
+
     tracing::info!("Import complete:");
     tracing::info!("  Lineages:      {}", stats.lineages);
     tracing::info!("  Participants:  {}", stats.participants);
@@ -132,6 +150,39 @@ pub async fn persist_to_neo4j(graph: &Graph, doc: &ParsedDocument) {
     tracing::info!("  DNA Tests:     {}", stats.dna_tests);
     tracing::info!("  Online Trees:  {}", stats.online_trees);
     tracing::info!("  Relationships: {}", stats.relationships);
+}
+
+/// Spouses are created as `Person` nodes but the source never assigns them to
+/// a lineage, so they end up unreachable: they inflate the public "individuals
+/// catalogued" count and a search hit on one goes nowhere, because the UI
+/// routes a person to their first lineage. Give each one their partner's
+/// lineage. Runs once at the end so it also covers spouses whose partner only
+/// picked up a lineage on a later pass.
+async fn attach_spouses_to_lineages(graph: &Graph) -> usize {
+    let query = Query::new(
+        "MATCH (s:Person)-[:SPOUSE_OF]-(m:Person)-[b:BELONGS_TO]->(l:Lineage) \
+         WHERE NOT (s)-[:BELONGS_TO]->() \
+         MERGE (s)-[sb:BELONGS_TO]->(l) \
+         SET sb.role = 'spouse', sb.generation_number = b.generation_number, \
+             sb.certainty = 'unknown' \
+         RETURN count(sb) AS attached"
+            .to_string(),
+    );
+
+    match graph.execute(query).await {
+        Ok(mut result) => match result.next().await {
+            Ok(Some(row)) => {
+                let n = row.get::<i64>("attached").unwrap_or(0);
+                tracing::info!("  Spouses attached to a lineage: {n}");
+                usize::try_from(n).unwrap_or(0)
+            }
+            _ => 0,
+        },
+        Err(e) => {
+            tracing::warn!("Failed to attach spouses to lineages: {e}");
+            0
+        }
+    }
 }
 
 #[derive(Default)]
@@ -706,10 +757,10 @@ async fn process_participant(
                 graph,
                 &person_id,
                 &spouse_person_id,
-                None,
-                None,
+                spouse.marriage_date.as_deref(),
+                spouse.marriage_place.as_deref(),
                 Some(spouse.marriage_order),
-                Some(&spouse.surname),
+                Some(&title_case(&spouse.surname)),
             )
             .await
             {
@@ -780,5 +831,37 @@ async fn execute_query(graph: &Graph, query: Query) -> bool {
             tracing::warn!("Neo4j query failed: {e}");
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_title_case_preserves_possessive() {
+        // Was "Mother'S".
+        assert_eq!(title_case("MOTHER'S MAIDEN NAME"), "Mother's Maiden Name");
+        // But a name after an apostrophe is still capitalized.
+        assert_eq!(title_case("O'SULLIVAN"), "O'Sullivan");
+        assert_eq!(title_case("O'BRIEN"), "O'Brien");
+    }
+
+    #[test]
+    fn test_title_case_preserves_acronyms() {
+        // Was "Y-Dna".
+        assert_eq!(title_case("Y-DNA subclade"), "Y-DNA Subclade");
+        assert_eq!(title_case("y-dna"), "Y-DNA");
+        assert_eq!(title_case("JOHN KENT III"), "John Kent III");
+        // Trailing punctuation must not defeat the match.
+        assert_eq!(title_case("the Y-DNA, test"), "The Y-DNA, Test");
+        // A generic all-caps word is still normalized.
+        assert_eq!(title_case("NEW JERSEY"), "New Jersey");
+        assert_eq!(title_case("SODUS, WAYNE, NY"), "Sodus, Wayne, NY");
+    }
+
+    #[test]
+    fn test_title_case_mc_prefix_still_repaired() {
+        assert_eq!(title_case("MCDONALD"), "McDonald");
     }
 }

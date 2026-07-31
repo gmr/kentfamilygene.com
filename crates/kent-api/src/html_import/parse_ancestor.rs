@@ -18,12 +18,6 @@ static PRIVACY_ROLE_PREFIXES: &[&str] = &[
     "Grandfather",
     "Grandparent",
     "Associate Researcher",
-    "Kent y-DNA Participant",
-    "Kent Great-",
-    "Kent Grandfather",
-    "Kent Grandmother",
-    "Kent Grandparent",
-    "Kent Parent",
     "y-DNA Participant",
     "y-DNAParticipant",
     "yDNA Participant",
@@ -42,6 +36,18 @@ static PRIVACY_ROLE_PREFIXES: &[&str] = &[
     "Project Member",
 ];
 
+/// Collapse the source's spelling variants onto one label per role. The source
+/// uses "y-DNA Participant", "yDNA Participant" and "y-DNAParticipant" for the
+/// same thing, which otherwise become three distinct labels in the graph.
+fn canonical_privacy_label(prefix: &str) -> &str {
+    match prefix {
+        "y-DNAParticipant" | "yDNA Participant" => "y-DNA Participant",
+        "Participant/Researcher" | "Researcher & Participant" => "Participant & Researcher",
+        "-Unknown-" | "-?-" => "Unknown",
+        other => other,
+    }
+}
+
 /// Detect if a `<strong>` name text is a privacy label (role placeholder).
 /// Returns `Some(label)` if it is, `None` if it's a real name.
 fn detect_privacy_label(raw_name: &str) -> Option<String> {
@@ -59,12 +65,14 @@ fn detect_privacy_label(raw_name: &str) -> Option<String> {
         }
     }
 
-    // Strip leading '['
+    // Strip leading '[', then an optional project-name qualifier: the source
+    // writes both "[Grandfather]" and "[Kent Grandfather]" for the same role.
     let inner = trimmed.trim_start_matches('[');
+    let inner = inner.strip_prefix("Kent ").unwrap_or(inner);
 
     for prefix in PRIVACY_ROLE_PREFIXES {
         if inner.starts_with(prefix) {
-            return Some(prefix.to_string());
+            return Some(canonical_privacy_label(prefix).to_string());
         }
     }
 
@@ -100,18 +108,14 @@ pub fn parse_li_entry(li: &ElementRef, _warnings: &mut Vec<String>) -> Option<Pa
 
     // Check for privacy labels (bracket-enclosed role placeholders)
     if let Some(privacy_label) = detect_privacy_label(raw_name) {
+        // Labels are already canonicalized, so the variant spellings are gone.
         let is_participant_self = matches!(
             privacy_label.as_str(),
             "y-DNA Participant"
-                | "y-DNAParticipant"
-                | "yDNA Participant"
                 | "Participant"
-                | "Participant/Researcher"
-                | "Researcher & Participant"
                 | "Participant & Researcher"
                 | "Associate Researcher"
                 | "Researcher"
-                | "Kent y-DNA Participant"
                 | "Nephew"
                 | "Project Member"
         );
@@ -219,7 +223,10 @@ pub fn parse_person_from_text(raw_name: &str, bio_text: &str) -> ParsedPerson {
         let mut person = parse_bio_text(bio_text);
         person.surname = surname;
         person.given_name = String::new();
-        person.notes = Some("Unknown given name".to_string());
+        person.notes = Some(match person.notes {
+            Some(existing) => format!("Unknown given name\n\n{existing}"),
+            None => "Unknown given name".to_string(),
+        });
         return person;
     }
 
@@ -293,9 +300,35 @@ fn split_name(name: &str) -> (String, String) {
     (given, surname)
 }
 
+/// Markers where a bio stops describing dates/names and turns into free prose.
+/// Everything from here on belongs in `person.notes`, not in a name field.
+static NOTE_MARKER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(?:^|[\s(\[])\(?\s*(?:note\s*:|family group sheet)").unwrap()
+});
+
+/// Split a bio at the first research-note marker. Returns the parseable head
+/// and the note tail. Without this the whole paragraph ends up as a name — one
+/// imported person carried a 300-character note as their given name.
+fn split_trailing_note(text: &str) -> (&str, Option<String>) {
+    let Some(mat) = NOTE_MARKER_RE.find(text) else {
+        return (text, None);
+    };
+    let note = text[mat.start()..]
+        .trim()
+        .trim_start_matches(['(', '['])
+        .trim();
+    let head = text[..mat.start()].trim();
+    if note.is_empty() {
+        (head, None)
+    } else {
+        (head, Some(note.to_string()))
+    }
+}
+
 /// Parse bio text (the part after the name) into person fields.
 fn parse_bio_text(text: &str) -> ParsedPerson {
     let text = text.trim().trim_start_matches(',').trim();
+    let (text, trailing_note) = split_trailing_note(text);
 
     let mut person = ParsedPerson {
         given_name: String::new(),
@@ -319,8 +352,11 @@ fn parse_bio_text(text: &str) -> ParsedPerson {
     };
 
     if text.is_empty() {
+        person.notes = trailing_note;
         return person;
     }
+
+    let mut notes: Vec<String> = Vec::new();
 
     // Use a state machine to parse: b DATE PLACE d DATE PLACE m SPOUSE
     // Find the positions of b, d, m tokens
@@ -365,11 +401,9 @@ fn parse_bio_text(text: &str) -> ParsedPerson {
             "m" => {
                 person.spouses = parse_spouse_text(content);
             }
-            "res" if person.notes.is_none() => {
+            "res" if notes.is_empty() => {
                 // Residence — store as note
-                person
-                    .notes
-                    .get_or_insert_with(|| format!("res. {content}"));
+                notes.push(format!("res. {content}"));
             }
             _ => {}
         }
@@ -392,6 +426,11 @@ fn parse_bio_text(text: &str) -> ParsedPerson {
                 person.birth_place = Some(place.to_string());
             }
         }
+    }
+
+    notes.extend(trailing_note);
+    if !notes.is_empty() {
+        person.notes = Some(notes.join("\n\n"));
     }
 
     person
@@ -670,6 +709,96 @@ fn parse_spouse_text(text: &str) -> Vec<ParsedSpouse> {
     }
 }
 
+fn is_month_token(token: &str) -> bool {
+    let t = token
+        .trim_matches(|c: char| !c.is_alphabetic())
+        .to_lowercase();
+    matches!(
+        t.as_str(),
+        "jan"
+            | "january"
+            | "feb"
+            | "february"
+            | "mar"
+            | "march"
+            | "apr"
+            | "april"
+            | "may"
+            | "jun"
+            | "june"
+            | "jul"
+            | "july"
+            | "aug"
+            | "august"
+            | "sep"
+            | "sept"
+            | "september"
+            | "oct"
+            | "october"
+            | "nov"
+            | "november"
+            | "dec"
+            | "december"
+    )
+}
+
+fn is_year_token(token: &str) -> bool {
+    let t = token.trim_matches(|c: char| !c.is_ascii_digit() && c != '/');
+    let head = t.split('/').next().unwrap_or("");
+    head.len() == 4 && head.chars().all(|c| c.is_ascii_digit())
+}
+
+fn is_date_modifier_token(token: &str) -> bool {
+    let t = token
+        .trim_matches(|c: char| !c.is_alphabetic())
+        .to_lowercase();
+    matches!(
+        t.as_str(),
+        "abt" | "about" | "ca" | "c" | "bef" | "before" | "aft" | "after" | "prob"
+    )
+}
+
+fn is_day_token(token: &str) -> bool {
+    let t = token.trim_matches(|c: char| !c.is_ascii_digit());
+    !t.is_empty() && t.len() <= 2 && t.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Split spouse text into the name and the trailing marriage date/place.
+///
+/// The source writes marriage info inline — "Sarah Plummer, 23 May 1796
+/// Thorndon, Suffolk, England" — and nothing used to terminate the name, so
+/// the date and place were absorbed into it. Cuts at the first date-like
+/// token, backing up over a leading day number or modifier.
+fn split_spouse_and_marriage(text: &str) -> (&str, Option<&str>) {
+    let tokens: Vec<(usize, &str)> = text
+        .split_whitespace()
+        .map(|t| (t.as_ptr() as usize - text.as_ptr() as usize, t))
+        .collect();
+
+    let Some(first) = tokens
+        .iter()
+        .position(|(_, t)| is_month_token(t) || is_year_token(t))
+    else {
+        return (text, None);
+    };
+
+    // Walk back over "23" / "abt" so the date starts at its true beginning.
+    let mut start = first;
+    while start > 0 {
+        let prev = tokens[start - 1].1;
+        if is_day_token(prev) || is_date_modifier_token(prev) {
+            start -= 1;
+        } else {
+            break;
+        }
+    }
+
+    let offset = tokens[start].0;
+    let name = text[..offset].trim().trim_end_matches(',').trim();
+    let marriage = text[offset..].trim();
+    (name, Some(marriage))
+}
+
 /// Parse a single spouse name.
 fn parse_single_spouse(text: &str, order: i64) -> Option<ParsedSpouse> {
     let text = text.trim();
@@ -688,14 +817,51 @@ fn parse_single_spouse(text: &str, order: i64) -> Option<ParsedSpouse> {
             },
             surname: "Unknown".to_string(),
             marriage_order: order,
+            marriage_date: None,
+            marriage_place: None,
         });
     }
+
+    let (text, marriage_text) = split_spouse_and_marriage(text);
+    let (marriage_date, marriage_place) = match marriage_text {
+        Some(m) => split_date_and_place(m),
+        None => (None, None),
+    };
+
+    // A separator left behind by a stripped note would become part of the
+    // surname ("Epperson;"). Not '.', which is part of "Jr."/"Sr.".
+    let text = text.trim_end_matches([';', ',']).trim();
+
+    // Drop a trailing multi-word parenthetical ("Summa (A Widow)") — a
+    // one-word one is a maiden name we want to keep ("Margaret (Hill)").
+    let text = match text.rfind(" (") {
+        Some(pos)
+            if text.ends_with(')') && text[pos..].contains(' ') && {
+                let inner = &text[pos + 2..text.len() - 1];
+                inner.contains(' ')
+            } =>
+        {
+            text[..pos].trim()
+        }
+        _ => text,
+    };
 
     // Handle "FirstName SURNAME" where surname is ALL CAPS
     // or "FirstName Surname" where surname is the last word
     let parts: Vec<&str> = text.split_whitespace().collect();
     if parts.is_empty() {
-        return None;
+        // The text was entirely marriage info. Keep the marriage facts on an
+        // anonymous spouse rather than dropping them.
+        if marriage_date.is_none() && marriage_place.is_none() {
+            return None;
+        }
+        return Some(ParsedSpouse {
+            given_name: None,
+            surname: "Unknown".to_string(),
+            marriage_order: order,
+            marriage_date,
+            marriage_place,
+        });
     }
 
     // Find the surname — typically the last ALL CAPS word, or just the last word
@@ -722,11 +888,18 @@ fn parse_single_spouse(text: &str, order: i64) -> Option<ParsedSpouse> {
         given_name,
         surname,
         marriage_order: order,
+        marriage_date,
+        marriage_place,
     })
 }
 
+/// True for an ALL-CAPS *word*. The alphabetic requirement matters: without it
+/// a bare year like "1796" has no lowercase letters and passes, so the surname
+/// scan in `parse_single_spouse` splits the name at the marriage date.
 fn is_all_caps(s: &str) -> bool {
-    s.len() > 1 && s.chars().all(|c| c.is_uppercase() || !c.is_alphabetic())
+    s.len() > 1
+        && s.chars().any(|c| c.is_alphabetic())
+        && s.chars().all(|c| c.is_uppercase() || !c.is_alphabetic())
 }
 
 /// Find the marriage boundary ("m " that starts marriage info).
@@ -844,6 +1017,98 @@ mod tests {
         let (date, place) = split_date_and_place("21 Jan 1851 Sodus, Wayne, NY");
         assert_eq!(date.as_deref(), Some("21 Jan 1851"));
         assert_eq!(place.as_deref(), Some("Sodus, Wayne, NY"));
+    }
+
+    // The four rows below are the corrupted records this parser actually
+    // produced; each asserts the specific corruption is gone.
+
+    #[test]
+    fn test_spouse_marriage_date_and_place_split_off_name() {
+        // Was: given_name "Sarah Plummer, 23 May", surname "1796 Thorndon, ..."
+        let person = parse_person_from_text(
+            "John Kent",
+            "b 1770 m Sarah Plummer, 23 May 1796 Thorndon, Mid-Suffolk, Suffolk, England",
+        );
+        let spouse = &person.spouses[0];
+        assert_eq!(spouse.given_name.as_deref(), Some("Sarah"));
+        assert_eq!(spouse.surname, "Plummer");
+        assert_eq!(spouse.marriage_date.as_deref(), Some("23 May 1796"));
+        assert_eq!(
+            spouse.marriage_place.as_deref(),
+            Some("Thorndon, Mid-Suffolk, Suffolk, England")
+        );
+    }
+
+    #[test]
+    fn test_year_is_not_a_surname() {
+        // is_all_caps() used to accept "1796" because it has no lowercase.
+        assert!(!is_all_caps("1796"));
+        assert!(is_all_caps("ANDERSON"));
+        assert!(is_all_caps("O'BRIEN"));
+    }
+
+    #[test]
+    fn test_research_note_does_not_become_a_name() {
+        // Was: a 300-character paragraph stored as given_name.
+        let person = parse_person_from_text(
+            "Walton Kent",
+            "b 1850 m Martha Ann Mattie Irvin Note: Walton Peterson Kent had retained \
+             his mother's maiden name of Kent, with a y-DNA subclade of R-P25.",
+        );
+        let spouse = &person.spouses[0];
+        assert_eq!(spouse.given_name.as_deref(), Some("Martha Ann Mattie"));
+        assert_eq!(spouse.surname, "Irvin");
+        let notes = person.notes.expect("note captured");
+        assert!(notes.starts_with("Note:"), "got {notes:?}");
+        assert!(notes.contains("R-P25"));
+    }
+
+    #[test]
+    fn test_family_group_sheet_marker_splits_note() {
+        let person = parse_person_from_text(
+            "Elijah Boyd",
+            "b 1880 m Edith Pearl Epperson; (Family Group Sheet for Elijah Boyd)",
+        );
+        assert_eq!(person.spouses[0].surname, "Epperson");
+        assert!(person.notes.unwrap().contains("Family Group Sheet"));
+    }
+
+    #[test]
+    fn test_trailing_multiword_parenthetical_dropped() {
+        // Was: surname "Summa (A Widow)".
+        let person = parse_person_from_text(
+            "Samuel Kent",
+            "b 1800 m Mrs. Margaret Angeline (Hill) Summa (A Widow)",
+        );
+        assert_eq!(person.spouses[0].surname, "Summa");
+        // A single-word parenthetical is a maiden name and must survive.
+        let keeps = parse_person_from_text("Samuel Kent", "b 1800 m Margaret (Hill)");
+        assert!(keeps.spouses[0].surname.contains("(Hill)"));
+    }
+
+    #[test]
+    fn test_privacy_labels_are_canonicalized() {
+        for raw in [
+            "[yDNA Participant]",
+            "[y-DNAParticipant]",
+            "[Kent y-DNA Participant]",
+        ] {
+            assert_eq!(
+                detect_privacy_label(raw).as_deref(),
+                Some("y-DNA Participant"),
+                "{raw}"
+            );
+        }
+        assert_eq!(
+            detect_privacy_label("[Kent Great-Grandfather]").as_deref(),
+            Some("Great-Grandfather")
+        );
+        assert_eq!(
+            detect_privacy_label("[Kent Parent]").as_deref(),
+            Some("Parent")
+        );
+        // A real name must still not be mistaken for a label.
+        assert_eq!(detect_privacy_label("[prob.] Joan Kent"), None);
     }
 
     #[test]

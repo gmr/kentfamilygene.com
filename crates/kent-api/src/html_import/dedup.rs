@@ -57,13 +57,34 @@ static STATE_ABBREVS: &[(&str, &str)] = &[
     ("WY", "Wyoming"),
 ];
 
+/// Namespace UUID for deterministic ID generation (UUID v5).
+pub const KENT_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x6b, 0x65, 0x6e, 0x74, 0x2d, 0x66, 0x61, 0x6d, 0x69, 0x6c, 0x79, 0x2d, 0x64, 0x6e, 0x61, 0x21,
+]);
+
+/// Generate a deterministic UUID from a namespace + key string. Every node the
+/// importer creates derives its ID this way, so a re-run of the same source
+/// `MERGE`s onto the existing graph instead of duplicating it.
+pub fn deterministic_id(key: &str) -> String {
+    Uuid::new_v5(&KENT_NAMESPACE, key.as_bytes()).to_string()
+}
+
+/// Canonical (given_name, surname).
+type NameKey = (String, String);
+/// A person node seen under a name: its birth year (if known) and its ID.
+type NamedPerson = (Option<String>, String);
+
 /// Deduplication context used during persistence.
 pub struct DedupContext {
-    pub persons: HashMap<PersonKey, String>,
-    pub places: HashMap<PlaceKey, String>,
-    pub haplogroups: HashMap<HaplogroupKey, String>,
-    pub participants: HashMap<String, String>, // kit_number -> uuid
-    pub lineages: HashMap<LineageKey, String>,
+    persons: HashMap<PersonKey, String>,
+    /// Every person seen per canonical name, in insertion order. Lets a record
+    /// that omits the birth date merge with the dated record for the same
+    /// person instead of forking a duplicate node.
+    persons_by_name: HashMap<NameKey, Vec<NamedPerson>>,
+    places: HashMap<PlaceKey, String>,
+    haplogroups: HashMap<HaplogroupKey, String>,
+    participants: HashMap<String, String>, // kit_number -> uuid
+    lineages: HashMap<LineageKey, String>,
     state_map: HashMap<String, String>,
 }
 
@@ -114,6 +135,7 @@ impl DedupContext {
 
         Self {
             persons: HashMap::new(),
+            persons_by_name: HashMap::new(),
             places: HashMap::new(),
             haplogroups: HashMap::new(),
             participants: HashMap::new(),
@@ -124,26 +146,70 @@ impl DedupContext {
 
     /// Get or create a person UUID, deduplicating by (given_name, surname, birth_year).
     pub fn get_or_create_person_id(&mut self, person: &ParsedPerson) -> String {
+        let given_name = canonical(&person.given_name);
+        let surname = canonical(&person.surname);
         let birth_year = person
             .birth_date_sort
             .as_ref()
             .and_then(|d| d.split('-').next().map(|y| y.to_string()));
 
-        let key = PersonKey {
-            given_name: canonical(&person.given_name),
-            surname: canonical(&person.surname),
-            birth_year,
-        };
-
-        // Don't dedup persons with empty names (privacy labels)
-        if key.given_name.is_empty() && key.surname.is_empty() {
-            return Uuid::now_v7().to_string();
+        // Nameless entries have no usable name key, so fall back to whatever
+        // else distinguishes them. Still deterministic, unlike a random UUID.
+        if given_name.is_empty() && surname.is_empty() {
+            return deterministic_id(&format!(
+                "person:anon:{}:{}:{}:{}",
+                person.birth_date_sort.as_deref().unwrap_or(""),
+                person.birth_place.as_deref().unwrap_or(""),
+                person.death_date_sort.as_deref().unwrap_or(""),
+                person.death_place.as_deref().unwrap_or(""),
+            ));
         }
 
-        self.persons
-            .entry(key)
-            .or_insert_with(|| Uuid::now_v7().to_string())
-            .clone()
+        let key = PersonKey {
+            given_name: given_name.clone(),
+            surname: surname.clone(),
+            birth_year: birth_year.clone(),
+        };
+        if let Some(id) = self.persons.get(&key) {
+            return id.clone();
+        }
+
+        // Same name, one record dated and one not: treat them as one person.
+        // Only when the match is unambiguous — two dated records for the same
+        // name are two different people and must stay apart.
+        let seen = self
+            .persons_by_name
+            .entry((given_name.clone(), surname.clone()))
+            .or_default();
+        let merged = if birth_year.is_some() {
+            // A dated record adopts the sole undated node for this name.
+            let undated: Vec<usize> = seen
+                .iter()
+                .enumerate()
+                .filter(|(_, (y, _))| y.is_none())
+                .map(|(i, _)| i)
+                .collect();
+            (undated.len() == 1 && seen.len() == 1).then(|| {
+                let i = undated[0];
+                seen[i].0 = birth_year.clone();
+                seen[i].1.clone()
+            })
+        } else {
+            // An undated record adopts the sole existing node for this name.
+            (seen.len() == 1).then(|| seen[0].1.clone())
+        };
+
+        let id = merged.unwrap_or_else(|| {
+            let id = deterministic_id(&format!(
+                "person:{given_name}|{surname}|{}",
+                birth_year.as_deref().unwrap_or("")
+            ));
+            seen.push((birth_year.clone(), id.clone()));
+            id
+        });
+
+        self.persons.insert(key, id.clone());
+        id
     }
 
     /// Get or create a haplogroup UUID.
@@ -152,11 +218,9 @@ impl DedupContext {
             name: canonical(name),
             subclade: canonical(subclade),
         };
+        let id = deterministic_id(&format!("haplogroup:{}|{}", key.name, key.subclade));
 
-        self.haplogroups
-            .entry(key)
-            .or_insert_with(|| Uuid::now_v7().to_string())
-            .clone()
+        self.haplogroups.entry(key).or_insert(id).clone()
     }
 
     /// Get or create a place UUID, normalizing the place first.
@@ -168,11 +232,8 @@ impl DedupContext {
             country: canonical(&normalized.country),
         };
 
-        let id = self
-            .places
-            .entry(key)
-            .or_insert_with(|| Uuid::now_v7().to_string())
-            .clone();
+        let new_id = deterministic_id(&format!("place:{}|{}|{}", key.name, key.state, key.country));
+        let id = self.places.entry(key).or_insert(new_id).clone();
 
         (id, normalized)
     }
@@ -183,17 +244,13 @@ impl DedupContext {
         // number is non-empty but canonicalizes to "", so every such
         // participant would otherwise collide on a single key and merge.
         if let Some(kit) = kit_number.map(canonical).filter(|k| !k.is_empty()) {
-            return self
-                .participants
-                .entry(kit)
-                .or_insert_with(|| Uuid::now_v7().to_string())
-                .clone();
+            let id = deterministic_id(&format!("participant:kit:{kit}"));
+            return self.participants.entry(kit).or_insert(id).clone();
         }
         // No kit number — use name as fallback key (less reliable)
-        self.participants
-            .entry(format!("name:{}", canonical(name)))
-            .or_insert_with(|| Uuid::now_v7().to_string())
-            .clone()
+        let key = format!("name:{}", canonical(name));
+        let id = deterministic_id(&format!("participant:{key}"));
+        self.participants.entry(key).or_insert(id).clone()
     }
 
     /// Get or create a lineage UUID.
@@ -204,10 +261,11 @@ impl DedupContext {
             name: canonical(&lineage.name),
         };
 
-        self.lineages
-            .entry(key)
-            .or_insert_with(|| Uuid::now_v7().to_string())
-            .clone()
+        let id = deterministic_id(&format!(
+            "lineage:{}|{}|{}",
+            key.origin_state, key.lineage_number, key.name
+        ));
+        self.lineages.entry(key).or_insert(id).clone()
     }
 
     /// Normalize a raw place string like "Sodus, Wayne, NY" into components.
@@ -390,4 +448,108 @@ fn is_country_part(s: &str) -> bool {
         || s.contains("Canada")
         || s.contains("New Zealand")
         || s.contains("Germany")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn person(given: &str, surname: &str, birth_sort: Option<&str>) -> ParsedPerson {
+        ParsedPerson {
+            given_name: given.to_string(),
+            surname: surname.to_string(),
+            name_suffix: None,
+            name_prefix: None,
+            sex: None,
+            birth_date: None,
+            birth_date_sort: birth_sort.map(String::from),
+            birth_date_modifier: None,
+            birth_place: None,
+            death_date: None,
+            death_date_sort: None,
+            death_date_modifier: None,
+            death_place: None,
+            is_living: false,
+            is_immigrant_ancestor: false,
+            spouses: vec![],
+            notes: None,
+            common_ancestor_gen: None,
+        }
+    }
+
+    /// The whole point of #5: a second import run must land on the same IDs.
+    #[test]
+    fn test_ids_are_stable_across_contexts() {
+        let p = person("John", "Kent", Some("1762-01-01"));
+        let mut a = DedupContext::new();
+        let mut b = DedupContext::new();
+        assert_eq!(a.get_or_create_person_id(&p), b.get_or_create_person_id(&p));
+
+        let lineage = ParsedLineage {
+            anchor: None,
+            name: "MARYLAND".to_string(),
+            lineage_number: Some(1),
+            region: None,
+            origin_state: Some("Maryland".to_string()),
+            is_new: false,
+            new_lineage_date: None,
+            is_empty: false,
+            migration_path: vec![],
+            common_ancestors: vec![],
+            participants: vec![],
+        };
+        let mut c = DedupContext::new();
+        let mut d = DedupContext::new();
+        assert_eq!(
+            c.get_or_create_lineage_id(&lineage),
+            d.get_or_create_lineage_id(&lineage)
+        );
+        assert_eq!(
+            c.get_or_create_haplogroup_id("R-M269", "R-P25"),
+            d.get_or_create_haplogroup_id("R-M269", "R-P25")
+        );
+        assert_eq!(
+            c.get_or_create_place_id("Sodus, Wayne, NY").0,
+            d.get_or_create_place_id("Sodus, Wayne, NY").0
+        );
+        assert_eq!(
+            c.get_or_create_participant_id(Some("12345"), "A"),
+            d.get_or_create_participant_id(Some("12345"), "A")
+        );
+    }
+
+    #[test]
+    fn test_undated_record_merges_into_dated_one() {
+        // Order 1: dated first.
+        let mut ctx = DedupContext::new();
+        let dated = ctx.get_or_create_person_id(&person("John", "Kent", Some("1762-01-01")));
+        let undated = ctx.get_or_create_person_id(&person("John", "Kent", None));
+        assert_eq!(dated, undated);
+
+        // Order 2: undated first — must merge the same way.
+        let mut ctx = DedupContext::new();
+        let undated = ctx.get_or_create_person_id(&person("John", "Kent", None));
+        let dated = ctx.get_or_create_person_id(&person("John", "Kent", Some("1762-01-01")));
+        assert_eq!(dated, undated);
+    }
+
+    #[test]
+    fn test_two_dated_records_stay_distinct() {
+        let mut ctx = DedupContext::new();
+        let a = ctx.get_or_create_person_id(&person("John", "Kent", Some("1762-01-01")));
+        let b = ctx.get_or_create_person_id(&person("John", "Kent", Some("1801-01-01")));
+        assert_ne!(a, b);
+        // With the name now ambiguous, an undated record must NOT merge.
+        let c = ctx.get_or_create_person_id(&person("John", "Kent", None));
+        assert_ne!(c, a);
+        assert_ne!(c, b);
+    }
+
+    #[test]
+    fn test_whitespace_only_kit_falls_back_to_name() {
+        let mut ctx = DedupContext::new();
+        let a = ctx.get_or_create_participant_id(Some("   "), "Alice");
+        let b = ctx.get_or_create_participant_id(Some("   "), "Bob");
+        assert_ne!(a, b, "whitespace kits must not collide");
+    }
 }
