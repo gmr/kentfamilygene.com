@@ -202,6 +202,49 @@ pub struct UpdateAdminNoteInput {
     pub resolved: Option<bool>,
 }
 
+#[derive(InputObject)]
+pub struct CreatePageInput {
+    pub slug: String,
+    pub title: String,
+    /// Markdown source.
+    pub body: String,
+    pub summary: Option<String>,
+    pub is_published: Option<bool>,
+}
+
+#[derive(InputObject)]
+pub struct UpdatePageInput {
+    pub slug: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub summary: Option<String>,
+    pub is_published: Option<bool>,
+}
+
+#[derive(InputObject)]
+pub struct CreateSnippetInput {
+    pub key: String,
+    pub title: Option<String>,
+    pub body: String,
+}
+
+#[derive(InputObject)]
+pub struct UpdateSnippetInput {
+    pub key: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+}
+
+#[derive(InputObject)]
+pub struct NavItemInput {
+    /// "header" or "footer".
+    pub location: String,
+    pub group_label: Option<String>,
+    pub label: String,
+    pub target: String,
+    pub sort_order: Option<i32>,
+}
+
 fn now_str() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
@@ -918,4 +961,236 @@ impl MutationRoot {
                 .await?,
         )
     }
+
+    // ── CMS: pages ─────────────────────────────────────────────────
+
+    async fn create_page(
+        &self,
+        ctx: &Context<'_>,
+        input: CreatePageInput,
+    ) -> async_graphql::Result<Page> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let now = now_str();
+        let row = kent_db::PageRow {
+            id: Uuid::now_v7().to_string(),
+            slug: require_slug(&input.slug)?,
+            title: input.title,
+            body: input.body,
+            summary: input.summary.filter(|s| !s.trim().is_empty()),
+            is_published: input.is_published.unwrap_or(false),
+            created_date: Some(now.clone()),
+            updated_date: Some(now),
+        };
+        Ok(Page::from(kent_db::create_page(graph, &row).await?))
+    }
+
+    async fn update_page(
+        &self,
+        ctx: &Context<'_>,
+        id: String,
+        input: UpdatePageInput,
+    ) -> async_graphql::Result<Page> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let existing = kent_db::find_page_by_id(graph, &id)
+            .await?
+            .ok_or("Page not found")?;
+        let row = kent_db::PageRow {
+            id: id.clone(),
+            slug: match input.slug {
+                Some(s) => require_slug(&s)?,
+                None => existing.slug,
+            },
+            title: input.title.unwrap_or(existing.title),
+            body: input.body.unwrap_or(existing.body),
+            // An explicit empty string clears the field; an absent one keeps it.
+            summary: clearable(input.summary, existing.summary),
+            is_published: input.is_published.unwrap_or(existing.is_published),
+            created_date: existing.created_date,
+            updated_date: Some(now_str()),
+        };
+        let updated = kent_db::update_page(graph, &id, &row)
+            .await?
+            .ok_or("Page not found")?;
+        Ok(Page::from(updated))
+    }
+
+    async fn delete_page(&self, ctx: &Context<'_>, id: String) -> async_graphql::Result<bool> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        Ok(kent_db::delete_page(graph, &id).await?)
+    }
+
+    // ── CMS: snippets ──────────────────────────────────────────────
+
+    async fn create_snippet(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateSnippetInput,
+    ) -> async_graphql::Result<Snippet> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let now = now_str();
+        let row = kent_db::SnippetRow {
+            id: Uuid::now_v7().to_string(),
+            key: require_slug(&input.key)?,
+            title: input.title.filter(|s| !s.trim().is_empty()),
+            body: input.body,
+            created_date: Some(now.clone()),
+            updated_date: Some(now),
+        };
+        Ok(Snippet::from(kent_db::create_snippet(graph, &row).await?))
+    }
+
+    async fn update_snippet(
+        &self,
+        ctx: &Context<'_>,
+        id: String,
+        input: UpdateSnippetInput,
+    ) -> async_graphql::Result<Snippet> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let existing = kent_db::find_all_snippets(graph)
+            .await?
+            .into_iter()
+            .find(|s| s.id == id)
+            .ok_or("Snippet not found")?;
+        let row = kent_db::SnippetRow {
+            id: id.clone(),
+            key: match input.key {
+                Some(k) => require_slug(&k)?,
+                None => existing.key,
+            },
+            title: clearable(input.title, existing.title),
+            body: input.body.unwrap_or(existing.body),
+            created_date: existing.created_date,
+            updated_date: Some(now_str()),
+        };
+        let updated = kent_db::update_snippet(graph, &id, &row)
+            .await?
+            .ok_or("Snippet not found")?;
+        Ok(Snippet::from(updated))
+    }
+
+    async fn delete_snippet(&self, ctx: &Context<'_>, id: String) -> async_graphql::Result<bool> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        Ok(kent_db::delete_snippet(graph, &id).await?)
+    }
+
+    // ── CMS: navigation ────────────────────────────────────────────
+
+    async fn create_nav_item(
+        &self,
+        ctx: &Context<'_>,
+        input: NavItemInput,
+    ) -> async_graphql::Result<NavItem> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let row = kent_db::NavItemRow {
+            id: Uuid::now_v7().to_string(),
+            location: input.location,
+            group_label: input.group_label,
+            label: input.label,
+            target: validate_nav_target(&input.target)?,
+            sort_order: input.sort_order.unwrap_or(0) as i64,
+        };
+        Ok(NavItem::from(kent_db::create_nav_item(graph, &row).await?))
+    }
+
+    async fn update_nav_item(
+        &self,
+        ctx: &Context<'_>,
+        id: String,
+        input: NavItemInput,
+    ) -> async_graphql::Result<NavItem> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        let row = kent_db::NavItemRow {
+            id: id.clone(),
+            location: input.location,
+            group_label: input.group_label,
+            label: input.label,
+            target: validate_nav_target(&input.target)?,
+            sort_order: input.sort_order.unwrap_or(0) as i64,
+        };
+        let updated = kent_db::update_nav_item(graph, &id, &row)
+            .await?
+            .ok_or("NavItem not found")?;
+        Ok(NavItem::from(updated))
+    }
+
+    async fn delete_nav_item(&self, ctx: &Context<'_>, id: String) -> async_graphql::Result<bool> {
+        require_auth(ctx)?;
+        let graph = ctx.data::<Graph>()?;
+        Ok(kent_db::delete_nav_item(graph, &id).await?)
+    }
+}
+
+/// Nav targets must be a site-relative path or an allowlisted URL scheme, so a
+/// stored target can never become a `javascript:`/`data:` href on the public site.
+fn validate_nav_target(target: &str) -> async_graphql::Result<String> {
+    let t = target.trim();
+    // "/\evil.com" and "//evil.com" both resolve to another origin in a browser.
+    if t.starts_with('/') && !t.starts_with("//") && !t.starts_with("/\\") {
+        return Ok(t.to_string());
+    }
+    let lower = t.to_ascii_lowercase();
+    if ["http://", "https://", "mailto:", "tel:"]
+        .iter()
+        .any(|p| lower.starts_with(p))
+    {
+        return Ok(t.to_string());
+    }
+    Err("Target must be a path starting with / or an http(s), mailto, or tel URL".into())
+}
+
+/// An optional update field: `Some("")` clears the value, absent keeps it.
+fn clearable(input: Option<String>, existing: Option<String>) -> Option<String> {
+    match input {
+        Some(s) if s.trim().is_empty() => None,
+        Some(s) => Some(s),
+        None => existing,
+    }
+}
+
+/// Paths the SPA router owns. A page on one of these is silently unreachable,
+/// because the /:slug route is registered after them.
+const RESERVED_SLUGS: &[&str] = &[
+    "admin",
+    "lineages",
+    "search",
+    "haplogroups",
+    "graphql",
+    "health",
+];
+
+/// Normalize a slug/key and reject one that normalizes away to nothing —
+/// an empty slug is unroutable and collides with the uniqueness constraint.
+fn require_slug(raw: &str) -> async_graphql::Result<String> {
+    let slug = normalize_slug(raw);
+    if slug.is_empty() {
+        return Err("Slug must contain at least one letter or number".into());
+    }
+    if RESERVED_SLUGS.contains(&slug.as_str()) {
+        return Err(format!("\"{slug}\" is reserved by the site's own routes").into());
+    }
+    Ok(slug)
+}
+
+/// Slugs and snippet keys are URL-addressable: lowercase, hyphen-separated.
+fn normalize_slug(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut last_dash = true; // trims leading separators
+    for ch in raw.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    out.trim_end_matches('-').to_string()
 }

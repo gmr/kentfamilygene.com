@@ -1,0 +1,10 @@
+query NavItems($location: String) {
+  navItems(location: $location) {
+    id
+    location
+    groupLabel
+    label
+    target
+    sortOrder
+  }
+}

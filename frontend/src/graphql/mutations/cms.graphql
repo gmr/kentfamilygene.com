@@ -1,0 +1,52 @@
+mutation CreatePage($input: CreatePageInput!) {
+  createPage(input: $input) {
+    id
+    slug
+  }
+}
+
+mutation UpdatePage($id: String!, $input: UpdatePageInput!) {
+  updatePage(id: $id, input: $input) {
+    id
+    slug
+    isPublished
+  }
+}
+
+mutation DeletePage($id: String!) {
+  deletePage(id: $id)
+}
+
+mutation CreateSnippet($input: CreateSnippetInput!) {
+  createSnippet(input: $input) {
+    id
+    key
+  }
+}
+
+mutation UpdateSnippet($id: String!, $input: UpdateSnippetInput!) {
+  updateSnippet(id: $id, input: $input) {
+    id
+    key
+  }
+}
+
+mutation DeleteSnippet($id: String!) {
+  deleteSnippet(id: $id)
+}
+
+mutation CreateNavItem($input: NavItemInput!) {
+  createNavItem(input: $input) {
+    id
+  }
+}
+
+mutation UpdateNavItem($id: String!, $input: NavItemInput!) {
+  updateNavItem(id: $id, input: $input) {
+    id
+  }
+}
+
+mutation DeleteNavItem($id: String!) {
+  deleteNavItem(id: $id)
+}

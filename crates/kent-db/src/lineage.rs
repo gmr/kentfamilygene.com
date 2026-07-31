@@ -13,7 +13,7 @@ pub async fn find_all_lineages(
         (
             Query::new(
                 "MATCH (l:Lineage) WHERE l.region = $region \
-                 RETURN l ORDER BY l.lineage_number \
+                 RETURN l ORDER BY l.lineage_number, l.origin_state, l.id \
                  SKIP $offset LIMIT $limit"
                     .to_string(),
             )
@@ -29,7 +29,7 @@ pub async fn find_all_lineages(
         (
             Query::new(
                 "MATCH (l:Lineage) \
-                 RETURN l ORDER BY l.region, l.lineage_number \
+                 RETURN l ORDER BY l.region, l.lineage_number, l.origin_state, l.id \
                  SKIP $offset LIMIT $limit"
                     .to_string(),
             )

@@ -1,0 +1,109 @@
+query PublicLineage($id: String!) {
+  lineage(id: $id) {
+    id
+    displayName
+    region
+    originState
+    lineageNumber
+    statusNote
+    isNew
+    participantCount
+    hasYDnaParticipant
+    brickWallAncestor {
+      id
+    }
+    migrationStops {
+      stopOrder
+      place {
+        id
+        name
+        county
+        state
+        country
+        familysearchUrl
+      }
+    }
+    haplogroups {
+      id
+      abbreviation
+      name
+    }
+    assignedPersons {
+      role
+      generationNumber
+      certainty
+      person {
+        id
+        givenName
+        surname
+        nameSuffix
+        privacyLabel
+        isLiving
+        isImmigrantAncestor
+        birthDate
+        birthDateModifier
+        birthPlace
+        deathDate
+        deathDateModifier
+        deathPlace
+        children {
+          id
+        }
+        spouses {
+          spouseSurname
+          marriageDate
+          marriagePlace
+          marriageOrder
+          spouse {
+            givenName
+            surname
+          }
+        }
+      }
+    }
+    participants {
+      id
+      displayName
+      membershipType
+      joinDate
+      ftdnaKitNumber
+      researchGoal
+      linkedPerson {
+        id
+      }
+      onlineTrees {
+        id
+        platform
+        treeName
+        url
+        username
+      }
+      dnaTests {
+        id
+        testType
+        testName
+        provider
+        markerCount
+        registeredWithProject
+        kitNumber
+      }
+      haplogroups {
+        id
+        abbreviation
+        name
+        confirmationStatus
+        haplogroupType
+      }
+      geneticMatches {
+        markerLevel
+        matchType
+        notes
+        participant {
+          id
+          displayName
+          ftdnaKitNumber
+        }
+      }
+    }
+  }
+}

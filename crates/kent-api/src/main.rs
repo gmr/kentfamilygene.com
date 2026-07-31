@@ -11,11 +11,7 @@ use axum::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use clap::{Parser, Subcommand};
-use tower_http::{
-    cors::CorsLayer,
-    services::{ServeDir, ServeFile},
-    trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use kent_domain::{AuthContext, KentSchema};
@@ -178,6 +174,12 @@ async fn run_server() {
         tracing::warn!("Failed to create search indexes (Neo4j may not support fulltext): {e}");
     }
 
+    // CMS slug/key uniqueness. Fatal, unlike the search indexes: without these
+    // constraints duplicate slugs are accepted and page(slug:) becomes ambiguous.
+    kent_db::content::ensure_content_constraints(&graph)
+        .await
+        .expect("Failed to create CMS content constraints");
+
     let schema = kent_domain::build_schema(graph);
 
     let state = AppState {
@@ -186,9 +188,15 @@ async fn run_server() {
         admin_password,
     };
 
-    // SPA fallback: serve static files, fall back to index.html for client-side routing
-    let spa_service = ServeDir::new(&static_dir)
-        .not_found_service(ServeFile::new(format!("{static_dir}/index.html")));
+    // SPA fallback: serve static files, fall back to index.html for client-side
+    // routing. `not_found_service(ServeFile)` returns index.html with a 404
+    // status, which renders fine in a browser but reads as broken to proxies,
+    // crawlers, and uptime checks — so serve the shell with an explicit 200.
+    let index_path = format!("{static_dir}/index.html");
+    let spa_service = ServeDir::new(&static_dir).fallback(get({
+        let index_path = index_path.clone();
+        move |uri: axum::http::Uri| spa_index(index_path.clone(), uri)
+    }));
 
     let app = Router::new()
         .route("/graphql", get(graphql_playground).post(graphql_handler))
@@ -226,6 +234,21 @@ async fn graphql_handler(
 /// GraphQL Playground (GET /graphql).
 async fn graphql_playground() -> impl IntoResponse {
     Html(GraphiQLSource::build().endpoint("/graphql").finish())
+}
+
+/// Serve the SPA shell for client-side routes. A missing file under /assets/
+/// stays a 404 — that is a broken build, not a route.
+async fn spa_index(index_path: String, uri: axum::http::Uri) -> impl IntoResponse {
+    if uri.path().starts_with("/assets/") {
+        return (StatusCode::NOT_FOUND, "Not found").into_response();
+    }
+    match tokio::fs::read_to_string(&index_path).await {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to read {index_path}: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "index.html unavailable").into_response()
+        }
+    }
 }
 
 /// Health check endpoint.

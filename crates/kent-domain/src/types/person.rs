@@ -2,6 +2,7 @@ use async_graphql::{ComplexObject, Context, SimpleObject};
 use kent_db::Neo4jGraph as Graph;
 
 use super::{AdminNote, LineageAssignment, PersonRelationship, SpouseRelationship};
+use crate::privacy;
 
 #[derive(SimpleObject, Debug, Clone)]
 #[graphql(complex)]
@@ -36,9 +37,13 @@ impl Person {
         let rows = kent_db::relationship::find_parents_of(graph, &self.id).await?;
         Ok(rows
             .into_iter()
-            .map(|(p, rel_type)| PersonRelationship {
-                person: Person::from(p),
-                relationship_type: rel_type,
+            .map(|(p, rel_type)| {
+                let mut person = Person::from(p);
+                privacy::mask_person_for_ctx(ctx, &mut person);
+                PersonRelationship {
+                    person,
+                    relationship_type: rel_type,
+                }
             })
             .collect())
     }
@@ -46,7 +51,9 @@ impl Person {
     async fn children(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Person>> {
         let graph = ctx.data::<Graph>()?;
         let rows = kent_db::relationship::find_children_of(graph, &self.id).await?;
-        Ok(rows.into_iter().map(Person::from).collect())
+        let mut children: Vec<Person> = rows.into_iter().map(Person::from).collect();
+        privacy::mask_persons_for_ctx(ctx, &mut children);
+        Ok(children)
     }
 
     async fn spouses(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<SpouseRelationship>> {
@@ -56,12 +63,18 @@ impl Person {
             .into_iter()
             .map(
                 |(spouse, marriage_date, marriage_place, marriage_order, spouse_surname)| {
+                    let mut spouse = Person::from(spouse);
+                    // The MARRIED_TO edge carries the spouse's real surname and
+                    // marriage details, so masking the Person alone still leaks
+                    // them. Decide before masking clears the dates.
+                    let masked = privacy::spouse_is_masked_for_ctx(ctx, &spouse);
+                    privacy::mask_person_for_ctx(ctx, &mut spouse);
                     SpouseRelationship {
-                        spouse: Person::from(spouse),
-                        marriage_date,
-                        marriage_place,
+                        spouse,
+                        marriage_date: if masked { None } else { marriage_date },
+                        marriage_place: if masked { None } else { marriage_place },
                         marriage_order: marriage_order.and_then(|n| i32::try_from(n).ok()),
-                        spouse_surname,
+                        spouse_surname: if masked { None } else { spouse_surname },
                     }
                 },
             )

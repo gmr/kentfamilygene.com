@@ -1,0 +1,23 @@
+query Pages {
+  pages {
+    id
+    slug
+    title
+    body
+    summary
+    isPublished
+    updatedDate
+  }
+}
+
+query Page($slug: String!) {
+  page(slug: $slug) {
+    id
+    slug
+    title
+    body
+    summary
+    isPublished
+    updatedDate
+  }
+}

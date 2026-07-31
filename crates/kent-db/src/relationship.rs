@@ -5,7 +5,8 @@ use crate::haplogroup::node_to_haplogroup_row;
 use crate::lineage::node_to_lineage_row;
 use crate::participant::node_to_participant_row;
 use crate::person::node_to_person_row;
-use crate::{AdminNoteRow, Error, HaplogroupRow, LineageRow, ParticipantRow, PersonRow};
+use crate::place::node_to_place_row;
+use crate::{AdminNoteRow, Error, HaplogroupRow, LineageRow, ParticipantRow, PersonRow, PlaceRow};
 
 // ── Person ↔ Lineage (BELONGS_TO) ──────────────────────────────────
 
@@ -619,6 +620,181 @@ pub async fn find_genetic_matches_of_participant(
         ));
     }
     Ok(out)
+}
+
+/// Ordered migration stops (places) for a lineage (via MIGRATION_STOP edges).
+pub async fn find_migration_stops_of_lineage(
+    graph: &Graph,
+    lineage_id: &str,
+) -> Result<Vec<(PlaceRow, i64, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (l:Lineage {id: $id})-[r:MIGRATION_STOP]->(place:Place) \
+         RETURN place, r.stop_order AS stop_order, r.role AS role \
+         ORDER BY r.stop_order"
+            .to_string(),
+    )
+    .param("id", lineage_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("place")?;
+        let stop_order: i64 = row.get("stop_order").unwrap_or(0);
+        let role: Option<String> = row.get("role").ok().filter(|s: &String| !s.is_empty());
+        out.push((node_to_place_row(&node), stop_order, role));
+    }
+    Ok(out)
+}
+
+/// Persons assigned to a lineage (via BELONGS_TO edges), ordered by generation.
+pub async fn find_persons_of_lineage(
+    graph: &Graph,
+    lineage_id: &str,
+) -> Result<Vec<(PersonRow, Option<String>, Option<i64>, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (person:Person)-[r:BELONGS_TO]->(l:Lineage {id: $id}) \
+         RETURN person, r.role AS role, r.generation_number AS gen, r.certainty AS certainty \
+         ORDER BY r.generation_number, person.birth_date_sort"
+            .to_string(),
+    )
+    .param("id", lineage_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("person")?;
+        let role: Option<String> = row.get("role").ok();
+        let generation: Option<i64> = row.get("gen").ok();
+        let certainty: Option<String> = row.get("certainty").ok();
+        out.push((node_to_person_row(&node), role, generation, certainty));
+    }
+    Ok(out)
+}
+
+/// Participants who research a lineage (via RESEARCHES edges).
+pub async fn find_participants_of_lineage(
+    graph: &Graph,
+    lineage_id: &str,
+) -> Result<Vec<(ParticipantRow, Option<String>)>, Error> {
+    let query = Query::new(
+        "MATCH (part:Participant)-[r:RESEARCHES]->(l:Lineage {id: $id}) \
+         RETURN part, r.branch_label AS branch_label \
+         ORDER BY part.join_date, part.display_name"
+            .to_string(),
+    )
+    .param("id", lineage_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("part")?;
+        let branch: Option<String> = row
+            .get("branch_label")
+            .ok()
+            .filter(|s: &String| !s.is_empty());
+        out.push((node_to_participant_row(&node), branch));
+    }
+    Ok(out)
+}
+
+/// Count participants researching a lineage without materializing the rows —
+/// the lineage browser asks for this on every lineage in one page load.
+pub async fn count_participants_of_lineage(graph: &Graph, lineage_id: &str) -> Result<i64, Error> {
+    count_query(
+        graph,
+        "MATCH (part:Participant)-[:RESEARCHES]->(l:Lineage {id: $id}) \
+         RETURN count(part) AS total",
+        lineage_id,
+    )
+    .await
+}
+
+/// Count participants assigned a haplogroup.
+pub async fn count_participants_of_haplogroup(
+    graph: &Graph,
+    haplogroup_id: &str,
+) -> Result<i64, Error> {
+    count_query(
+        graph,
+        "MATCH (part:Participant)-[:HAS_HAPLOGROUP]->(h:Haplogroup {id: $id}) \
+         RETURN count(part) AS total",
+        haplogroup_id,
+    )
+    .await
+}
+
+async fn count_query(graph: &Graph, cypher: &str, id: &str) -> Result<i64, Error> {
+    let mut result = graph
+        .execute(Query::new(cypher.to_string()).param("id", id))
+        .await?;
+    if let Some(row) = result.next().await? {
+        Ok(row.get::<i64>("total").unwrap_or(0))
+    } else {
+        Ok(0)
+    }
+}
+
+/// Participants assigned a given haplogroup (via HAS_HAPLOGROUP edges).
+pub async fn find_participants_of_haplogroup(
+    graph: &Graph,
+    haplogroup_id: &str,
+) -> Result<Vec<ParticipantRow>, Error> {
+    let query = Query::new(
+        "MATCH (part:Participant)-[:HAS_HAPLOGROUP]->(h:Haplogroup {id: $id}) \
+         RETURN part ORDER BY part.display_name"
+            .to_string(),
+    )
+    .param("id", haplogroup_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("part")?;
+        out.push(node_to_participant_row(&node));
+    }
+    Ok(out)
+}
+
+/// Distinct haplogroups assigned to the participants of a lineage.
+pub async fn find_haplogroups_of_lineage(
+    graph: &Graph,
+    lineage_id: &str,
+) -> Result<Vec<HaplogroupRow>, Error> {
+    let query = Query::new(
+        "MATCH (part:Participant)-[:RESEARCHES]->(:Lineage {id: $id}) \
+         MATCH (part)-[:HAS_HAPLOGROUP]->(h:Haplogroup) \
+         WITH DISTINCT h RETURN h ORDER BY h.name"
+            .to_string(),
+    )
+    .param("id", lineage_id);
+
+    let mut result = graph.execute(query).await?;
+    let mut out = Vec::new();
+    while let Some(row) = result.next().await? {
+        let node: neo4rs::Node = row.get("h")?;
+        out.push(node_to_haplogroup_row(&node));
+    }
+    Ok(out)
+}
+
+/// Whether any participant researching this lineage has taken a Y-DNA test.
+/// Used to distinguish confirmed lineages from those needing a y-DNA participant.
+pub async fn lineage_has_ydna_participant(graph: &Graph, lineage_id: &str) -> Result<bool, Error> {
+    let query = Query::new(
+        "MATCH (part:Participant)-[:RESEARCHES]->(:Lineage {id: $id}) \
+         MATCH (part)-[:TOOK_TEST]->(t:DNATest) \
+         WHERE toLower(coalesce(t.test_type, '')) STARTS WITH 'y' \
+         RETURN count(t) > 0 AS has_ydna"
+            .to_string(),
+    )
+    .param("id", lineage_id);
+
+    let mut result = graph.execute(query).await?;
+    if let Some(row) = result.next().await? {
+        Ok(row.get::<bool>("has_ydna").unwrap_or(false))
+    } else {
+        Ok(false)
+    }
 }
 
 /// Admin notes attached to any entity (via ANNOTATES edges).

@@ -19,8 +19,10 @@ import {
   useCreateLineageMutation,
   useUpdateLineageMutation,
   useDeleteLineageMutation,
-  type Lineage,
+  type LineagesQuery,
 } from '../../generated/graphql';
+
+type LineageListItem = LineagesQuery['lineages']['items'][number];
 
 const lineageSchema = z.object({
   displayName: z.string().min(1, 'Display name is required'),
@@ -39,7 +41,7 @@ export function Lineages() {
   const [searchQuery, setSearchQuery] = useState('');
   const [newLineagesFilter, setNewLineagesFilter] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingLineage, setEditingLineage] = useState<Lineage | null>(null);
+  const [editingLineage, setEditingLineage] = useState<LineageListItem | null>(null);
 
   const [{ data, fetching, error }, refetchLineages] = useLineagesQuery();
 

@@ -1,0 +1,300 @@
+/* Public site — faithful to the imported "Kent Family Project" design.
+   Palette + typography live here; layout/visuals are largely inline in the
+   components to mirror the source design. This file carries the things inline
+   styles can't express: pseudo-classes, scrollbars, and responsive breakpoints. */
+
+.kent-root {
+  --kent-teal: #87c2c4;
+  --kent-teal-ink: #2b6c6e;
+  --kent-salmon: #d5aba9;
+  --kent-wheat: #ffdead;
+  --kent-wheat-light: #f5deb3;
+  --kent-bluegray: #87a4c4;
+  --kent-bg: #f6f6f6;
+  --kent-panel: #fbfbfa;
+  --kent-ink: #191919;
+  --kent-muted: #555555;
+  --kent-rule: #cccccc;
+
+  min-height: 100vh;
+  background: var(--kent-bg);
+  color: var(--kent-ink);
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.kent-root a {
+  color: var(--kent-teal-ink);
+  text-decoration: none;
+}
+.kent-root a:hover {
+  color: var(--kent-ink);
+  text-decoration: underline;
+}
+.kent-root ::selection {
+  background: var(--kent-wheat);
+}
+.kent-root h1,
+.kent-root h2,
+.kent-root h3,
+.kent-root h4 {
+  font-family: 'Source Serif 4', Georgia, serif;
+}
+
+/* Skip link */
+.kent-skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: #191919;
+  color: #fff;
+  padding: 10px 16px;
+  z-index: 200;
+}
+.kent-skip:focus {
+  left: 12px;
+  top: 12px;
+}
+
+/* Custom scrollbars for scroll regions */
+.kent-scroll::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+.kent-scroll::-webkit-scrollbar-thumb {
+  background: #cccccc;
+  border-radius: 6px;
+}
+
+/* Hover affordances (inline styles can't do :hover) */
+.kent-cta:hover {
+  background: #191919 !important;
+  color: #ffdead !important;
+  text-decoration: none !important;
+}
+.kent-btn-dark:hover {
+  background: #2b6c6e !important;
+  text-decoration: none !important;
+  color: #fbfbfa !important;
+}
+.kent-btn-outline:hover {
+  background: #191919 !important;
+  color: #fbfbfa !important;
+  text-decoration: none !important;
+}
+.kent-btn-quiet:hover {
+  border-color: #191919 !important;
+  text-decoration: none !important;
+}
+.kent-region-tile:hover {
+  border-color: #191919 !important;
+  background: #fffaf0 !important;
+  text-decoration: none !important;
+}
+.kent-card-link:hover {
+  border-color: #191919 !important;
+  text-decoration: none !important;
+}
+.kent-sidebar-link:hover {
+  background: #f6f6f6 !important;
+  text-decoration: none !important;
+}
+.kent-place-chip:hover {
+  background: #87c2c4 !important;
+  text-decoration: none !important;
+}
+.kent-contact:hover {
+  background: #ffdead !important;
+  text-decoration: none !important;
+}
+.kent-navlink {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: 15px;
+  color: #555555;
+  border-bottom: 2px solid transparent;
+  text-decoration: none;
+  font-weight: 500;
+}
+.kent-navlink:hover {
+  color: #191919;
+  text-decoration: none;
+}
+.kent-navlink.active {
+  color: #191919;
+  font-weight: 700;
+  border-bottom-color: #191919;
+}
+
+/* Responsive layout — mirrors the design's breakpoints. */
+@media (max-width: 1024px) {
+  .kent-browse-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .kent-sidebar {
+    position: static !important;
+    max-height: none !important;
+  }
+}
+@media (max-width: 900px) {
+  .kent-hero-grid,
+  .kent-part-grid,
+  .kent-haplo-grid,
+  .kent-footer-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .kent-member-grid,
+  .kent-region-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .kent-pill-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 640px) {
+  .kent-desktop-nav .kent-nav-items {
+    display: none !important;
+  }
+  .kent-member-grid,
+  .kent-region-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Markdown bodies rendered from the CMS (pages and snippets). */
+.kent-prose {
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: #333333;
+}
+.kent-prose > :first-child {
+  margin-top: 0;
+}
+.kent-prose > :last-child {
+  margin-bottom: 0;
+}
+.kent-prose h1,
+.kent-prose h2,
+.kent-prose h3 {
+  font-family: 'Source Serif 4', serif;
+  font-weight: 700;
+  color: #191919;
+  line-height: 1.25;
+  margin: 1.6em 0 0.5em;
+}
+.kent-prose h1 {
+  font-size: 30px;
+}
+.kent-prose h2 {
+  font-size: 24px;
+}
+.kent-prose h3 {
+  font-size: 19px;
+}
+.kent-prose p,
+.kent-prose ul,
+.kent-prose ol,
+.kent-prose blockquote,
+.kent-prose table {
+  margin: 0 0 1.1em;
+}
+.kent-prose ul,
+.kent-prose ol {
+  padding-left: 1.4em;
+}
+.kent-prose li {
+  margin-bottom: 0.35em;
+}
+.kent-prose a {
+  color: #2b6c6e;
+}
+.kent-prose blockquote {
+  border-left: 3px solid #87c2c4;
+  padding-left: 14px;
+  color: #555555;
+  font-style: italic;
+}
+.kent-prose code {
+  font-family: 'Spline Sans Mono', monospace;
+  font-size: 0.92em;
+  background: #f6f6f6;
+  padding: 1px 4px;
+}
+.kent-prose pre {
+  background: #f6f6f6;
+  border: 1px solid #e4e4e4;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 1.1em;
+}
+.kent-prose pre code {
+  background: none;
+  padding: 0;
+}
+.kent-prose hr {
+  border: none;
+  border-top: 1px solid #cccccc;
+  margin: 1.8em 0;
+}
+.kent-prose img {
+  max-width: 100%;
+  height: auto;
+}
+.kent-prose table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.kent-prose th,
+.kent-prose td {
+  border: 1px solid #e4e4e4;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+/* Mobile navigation drawer (the desktop links hide below 640px). */
+.kent-nav-toggle {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: 1.5px solid #191919;
+  padding: 6px 12px;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  color: #191919;
+}
+.kent-mobile-nav {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 22px 16px;
+  border-top: 1px solid #cccccc;
+  background: #fbfbfa;
+}
+.kent-mobile-nav .kent-navlink {
+  padding: 10px 0;
+  font-size: 16px;
+}
+.kent-mobile-cta {
+  margin-top: 8px;
+  padding: 10px 18px;
+  text-align: center;
+  background: #ffdead;
+  border: 1.5px solid #191919;
+  font-weight: 700;
+  font-size: 15px;
+  color: #191919;
+  text-decoration: none;
+}
+@media (max-width: 640px) {
+  .kent-nav-toggle {
+    display: block;
+  }
+  .kent-mobile-nav {
+    display: flex;
+  }
+  .kent-desktop-nav .kent-cta {
+    display: none;
+  }
+}

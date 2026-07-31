@@ -10,9 +10,79 @@ const KENT_NAMESPACE: Uuid = Uuid::from_bytes([
     0x6b, 0x65, 0x6e, 0x74, 0x2d, 0x66, 0x61, 0x6d, 0x69, 0x6c, 0x79, 0x2d, 0x64, 0x6e, 0x61, 0x21,
 ]);
 
+/// Canonicalize a value before it becomes part of a deterministic ID: trim,
+/// collapse whitespace runs, lowercase.
+fn canonical_key(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 /// Generate a deterministic UUID from a namespace + key string.
 fn deterministic_id(key: &str) -> String {
     Uuid::new_v5(&KENT_NAMESPACE, key.as_bytes()).to_string()
+}
+
+/// Normalize an ALL-CAPS (or lower-case) name/place to Title Case. Preserves
+/// abbreviations (2-letter all-caps codes like "GA"/"NY" and "USA") and repairs
+/// "Mc" surname prefixes ("MCDONALD" -> "McDonald"). Capitalizes after spaces,
+/// hyphens and apostrophes.
+fn title_case(input: &str) -> String {
+    input
+        .split_whitespace()
+        .map(title_case_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Title-case an `Option<String>`, leaving `None`/empty untouched.
+fn title_case_opt(input: &Option<String>) -> Option<String> {
+    input
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| title_case(s))
+}
+
+fn title_case_token(token: &str) -> String {
+    // Preserve genuine abbreviations only: 2-letter all-caps state/country codes
+    // (GA, NY, UK) and "USA". Do NOT preserve generic 3-letter words like "NEW".
+    let all_caps_alpha = !token.is_empty()
+        && token
+            .chars()
+            .all(|c| c.is_ascii_uppercase() && c.is_ascii_alphabetic());
+    if token == "USA" || (all_caps_alpha && token.len() == 2) {
+        return token.to_string();
+    }
+
+    let mut out = String::with_capacity(token.len());
+    let mut at_boundary = true;
+    for ch in token.chars() {
+        if ch.is_alphanumeric() {
+            if at_boundary {
+                out.extend(ch.to_uppercase());
+            } else {
+                out.extend(ch.to_lowercase());
+            }
+            at_boundary = false;
+        } else {
+            out.push(ch);
+            at_boundary = matches!(ch, '-' | '\'' | '\u{2019}' | '.' | '(' | '/');
+        }
+    }
+
+    // "Mcdonald" -> "McDonald"
+    if let Some(rest) = out.strip_prefix("Mc")
+        && let Some(first) = rest.chars().next()
+        && first.is_ascii_lowercase()
+    {
+        let mut fixed = String::from("Mc");
+        fixed.extend(first.to_uppercase());
+        fixed.push_str(&rest[first.len_utf8()..]);
+        return fixed;
+    }
+    out
 }
 
 /// Persist the full parsed document to Neo4j.
@@ -166,10 +236,10 @@ async fn create_places(
                 .to_string(),
         )
         .param("id", id)
-        .param("name", normalized.name)
-        .param("county", normalized.county)
-        .param("state", normalized.state)
-        .param("country", normalized.country);
+        .param("name", title_case(&normalized.name))
+        .param("county", title_case_opt(&normalized.county))
+        .param("state", title_case(&normalized.state))
+        .param("country", title_case(&normalized.country));
 
         if execute_query(graph, query).await {
             stats.places += 1;
@@ -198,9 +268,9 @@ async fn create_lineages(
                 .to_string(),
         )
         .param("id", id.clone())
-        .param("origin_state", lineage.origin_state.clone())
+        .param("origin_state", title_case_opt(&lineage.origin_state))
         .param("lineage_number", lineage.lineage_number)
-        .param("display_name", lineage.name.clone())
+        .param("display_name", title_case(&lineage.name))
         .param("region", lineage.region.clone())
         .param("is_new", lineage.is_new)
         .param("new_lineage_date", lineage.new_lineage_date.clone())
@@ -321,7 +391,7 @@ async fn process_participant(
             .to_string(),
     )
     .param("id", participant_id.clone())
-    .param("display_name", block.display_name.clone())
+    .param("display_name", title_case(&block.display_name))
     .param("email", block.email.clone())
     .param("membership_type", membership_type)
     .param("ftdna_kit_number", kit_number.map(String::from))
@@ -605,10 +675,13 @@ async fn process_participant(
 
         // Create spouse persons and SPOUSE_OF relationships
         for spouse in &entry.person.spouses {
+            // Canonicalize the key inputs: the persisted names are title-cased,
+            // so hashing the raw parse would give "ANN  SMITH" and "Ann Smith"
+            // different IDs and duplicate the spouse on re-import.
             let spouse_person_id = deterministic_id(&format!(
                 "{person_id}:spouse:{}:{}:{}",
-                spouse.given_name.as_deref().unwrap_or(""),
-                spouse.surname,
+                canonical_key(spouse.given_name.as_deref().unwrap_or("")),
+                canonical_key(&spouse.surname),
                 spouse.marriage_order
             ));
             let query = Query::new(
@@ -621,8 +694,8 @@ async fn process_participant(
                     .to_string(),
             )
             .param("id", spouse_person_id.clone())
-            .param("given_name", spouse.given_name.clone())
-            .param("surname", spouse.surname.clone())
+            .param("given_name", title_case_opt(&spouse.given_name))
+            .param("surname", title_case(&spouse.surname))
             .param("now", now.clone());
 
             if execute_query(graph, query).await {
@@ -679,8 +752,8 @@ async fn create_person_node(
             .to_string(),
     )
     .param("id", id.to_string())
-    .param("given_name", person.given_name.clone())
-    .param("surname", person.surname.clone())
+    .param("given_name", title_case(&person.given_name))
+    .param("surname", title_case(&person.surname))
     .param("name_suffix", person.name_suffix.clone())
     .param("name_prefix", person.name_prefix.clone())
     .param("sex", sex)

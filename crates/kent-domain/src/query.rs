@@ -91,6 +91,8 @@ impl QueryRoot {
         &self,
         ctx: &Context<'_>,
         active_only: Option<bool>,
+        // Order by join date, newest first, instead of by display name.
+        #[graphql(default = false)] newest_first: bool,
         #[graphql(default = 0)] offset: i32,
         #[graphql(default = 10000)] limit: i32,
     ) -> async_graphql::Result<ParticipantConnection> {
@@ -99,7 +101,7 @@ impl QueryRoot {
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
-            kent_db::find_all_participants(graph, active_only, offset, limit).await?;
+            kent_db::find_all_participants(graph, active_only, newest_first, offset, limit).await?;
 
         let mut items: Vec<Participant> = rows.into_iter().map(Participant::from).collect();
         privacy::mask_participants(&mut items);
@@ -200,13 +202,28 @@ impl QueryRoot {
         let results =
             kent_db::search::search_all(graph, &query, type_refs.as_deref(), limit).await?;
 
+        // Search bypasses the Person resolver, so masking has to happen here or
+        // a living person hidden everywhere else surfaces by name in results.
+        let public = privacy::is_public(ctx);
         let items = results
             .into_iter()
-            .map(|r| SearchResultItem {
-                id: r.id,
-                result_type: r.result_type,
-                display: r.display,
-                score: r.score,
+            .map(|r| {
+                let masked = public
+                    && r.result_type == "Person"
+                    && privacy::is_living_dates(
+                        r.death_date.as_deref(),
+                        r.birth_date_sort.as_deref(),
+                    );
+                SearchResultItem {
+                    id: r.id,
+                    result_type: r.result_type,
+                    display: if masked {
+                        r.privacy_label.unwrap_or_else(|| "[Living]".to_string())
+                    } else {
+                        r.display
+                    },
+                    score: r.score,
+                }
             })
             .collect();
 
@@ -219,11 +236,60 @@ impl QueryRoot {
         let s = kent_db::search::get_stats(graph).await?;
         Ok(Stats {
             lineage_count: s.lineage_count as i32,
+            region_count: s.region_count as i32,
             person_count: s.person_count as i32,
             participant_count: s.participant_count as i32,
             haplogroup_count: s.haplogroup_count as i32,
             place_count: s.place_count as i32,
+            last_updated: s.last_updated,
         })
+    }
+
+    // ── CMS content ────────────────────────────────────────────────
+
+    /// List CMS pages. Drafts are only visible to authenticated callers.
+    async fn pages(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Page>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::find_all_pages(graph, privacy::is_public(ctx)).await?;
+        Ok(rows.into_iter().map(Page::from).collect())
+    }
+
+    /// Fetch a page by slug. A draft resolves to null unless authenticated.
+    async fn page(&self, ctx: &Context<'_>, slug: String) -> async_graphql::Result<Option<Page>> {
+        let graph = ctx.data::<Graph>()?;
+        let row = kent_db::find_page_by_slug(graph, &slug).await?;
+        Ok(row
+            .filter(|p| p.is_published || !privacy::is_public(ctx))
+            .map(Page::from))
+    }
+
+    /// List reusable content snippets.
+    async fn snippets(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<Snippet>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::find_all_snippets(graph).await?;
+        Ok(rows.into_iter().map(Snippet::from).collect())
+    }
+
+    /// Fetch a single snippet by key.
+    async fn snippet(
+        &self,
+        ctx: &Context<'_>,
+        key: String,
+    ) -> async_graphql::Result<Option<Snippet>> {
+        let graph = ctx.data::<Graph>()?;
+        let row = kent_db::find_snippet_by_key(graph, &key).await?;
+        Ok(row.map(Snippet::from))
+    }
+
+    /// Managed navigation links, optionally filtered to "header" or "footer".
+    async fn nav_items(
+        &self,
+        ctx: &Context<'_>,
+        location: Option<String>,
+    ) -> async_graphql::Result<Vec<NavItem>> {
+        let graph = ctx.data::<Graph>()?;
+        let rows = kent_db::find_nav_items(graph, location.as_deref()).await?;
+        Ok(rows.into_iter().map(NavItem::from).collect())
     }
 
     // ── Admin queries (auth required, unmasked data) ───────────────
@@ -291,7 +357,7 @@ impl QueryRoot {
         let offset = offset.max(0) as i64;
 
         let (rows, total) =
-            kent_db::find_all_participants(graph, active_only, offset, limit).await?;
+            kent_db::find_all_participants(graph, active_only, false, offset, limit).await?;
 
         let items: Vec<Participant> = rows.into_iter().map(Participant::from).collect();
         let total = total as i32;
@@ -361,8 +427,11 @@ pub struct SearchResponse {
 #[derive(SimpleObject, Debug)]
 pub struct Stats {
     pub lineage_count: i32,
+    pub region_count: i32,
     pub person_count: i32,
     pub participant_count: i32,
     pub haplogroup_count: i32,
     pub place_count: i32,
+    /// ISO-8601 timestamp of the newest data change or published CMS edit.
+    pub last_updated: Option<String>,
 }

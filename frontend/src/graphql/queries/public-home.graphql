@@ -1,0 +1,26 @@
+query PublicNewestMembers($limit: Int) {
+  participants(activeOnly: true, newestFirst: true, limit: $limit) {
+    items {
+      id
+      displayName
+      membershipType
+      joinDate
+      lineageMemberships {
+        lineage {
+          id
+          displayName
+          region
+        }
+      }
+    }
+  }
+}
+
+query PublicRegionOverview {
+  lineages {
+    items {
+      id
+      region
+    }
+  }
+}

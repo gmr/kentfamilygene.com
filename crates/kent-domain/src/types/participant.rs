@@ -4,6 +4,7 @@ use kent_db::Neo4jGraph as Graph;
 use super::{
     AdminNote, DnaTest, GeneticMatchEntry, Haplogroup, LineageMembership, OnlineTree, Person,
 };
+use crate::privacy;
 
 #[derive(SimpleObject, Debug, Clone)]
 #[graphql(complex)]
@@ -26,7 +27,11 @@ impl Participant {
     async fn linked_person(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Person>> {
         let graph = ctx.data::<Graph>()?;
         let row = kent_db::relationship::find_person_for_participant(graph, &self.id).await?;
-        Ok(row.map(Person::from))
+        Ok(row.map(|r| {
+            let mut person = Person::from(r);
+            privacy::mask_person_for_ctx(ctx, &mut person);
+            person
+        }))
     }
 
     async fn dna_tests(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<DnaTest>> {
@@ -74,11 +79,15 @@ impl Participant {
             kent_db::relationship::find_genetic_matches_of_participant(graph, &self.id).await?;
         Ok(rows
             .into_iter()
-            .map(|(p, marker_level, match_type, notes)| GeneticMatchEntry {
-                participant: Participant::from(p),
-                marker_level: marker_level.and_then(|n| i32::try_from(n).ok()),
-                match_type,
-                notes,
+            .map(|(p, marker_level, match_type, notes)| {
+                let mut participant = Participant::from(p);
+                privacy::mask_participant_for_ctx(ctx, &mut participant);
+                GeneticMatchEntry {
+                    participant,
+                    marker_level: marker_level.and_then(|n| i32::try_from(n).ok()),
+                    match_type,
+                    notes,
+                }
             })
             .collect())
     }
