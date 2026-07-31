@@ -1,27 +1,19 @@
-# syntax=docker/dockerfile:1
+# -- Build frontend --
+FROM node:22-alpine AS frontend
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+COPY schema.graphql /app/schema.graphql
+RUN npm run codegen && npm run build
 
-# ── Frontend ───────────────────────────────────────────────────────
-# src/generated/ is gitignored, so codegen has to run here. It reads
-# ../schema.graphql, which is why the whole repo root is the build context.
-FROM node:22-slim AS frontend
-
-WORKDIR /build
-
-COPY frontend/package.json frontend/package-lock.json ./frontend/
-RUN cd frontend && npm ci
-
-COPY schema.graphql ./
-COPY frontend/ ./frontend/
-RUN cd frontend && npm run codegen && npm run build
-
-# ── Backend ────────────────────────────────────────────────────────
-FROM rust:1-slim-bookworm AS backend
-
-WORKDIR /build
-
-# Cache dependency compilation: build stub crates first so the expensive
-# dependency layer only rebuilds when the manifests change.
+# -- Build backend --
+FROM rust:1-alpine AS backend
+RUN apk add --no-cache musl-dev pkgconf openssl-dev openssl-libs-static
+WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
+# Compile dependencies against stub crates first, so editing our own sources
+# doesn't invalidate the (slow) dependency layer on every build.
 COPY crates/kent-db/Cargo.toml ./crates/kent-db/
 COPY crates/kent-domain/Cargo.toml ./crates/kent-domain/
 COPY crates/kent-api/Cargo.toml ./crates/kent-api/
@@ -29,39 +21,27 @@ RUN mkdir -p crates/kent-db/src crates/kent-domain/src crates/kent-api/src \
     && echo 'pub fn stub() {}' > crates/kent-db/src/lib.rs \
     && echo 'pub fn stub() {}' > crates/kent-domain/src/lib.rs \
     && echo 'fn main() {}' > crates/kent-api/src/main.rs \
-    && cargo build --release --locked \
-    && rm -rf crates/*/src
+    && cargo build --release -p kent-api \
+    && rm -rf crates/kent-db/src crates/kent-domain/src crates/kent-api/src
+COPY crates/ crates/
+RUN cargo build --release -p kent-api
 
-COPY crates/ ./crates/
-# Cargo skips rebuilding when mtimes look unchanged; the stub removal above
-# plus this touch guarantees the real sources compile.
-RUN touch crates/*/src/lib.rs crates/kent-api/src/main.rs 2>/dev/null || true
-RUN cargo build --release --locked --bin kent-api
-
-# ── Runtime ────────────────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --create-home --uid 10001 kent
-
-WORKDIR /app
-
-COPY --from=backend /build/target/release/kent-api /usr/local/bin/kent-api
-COPY --from=frontend /build/frontend/dist ./dist
+# -- Runtime --
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates wget \
+    && adduser -S -u 10001 kent
+COPY --from=backend /app/target/release/kent-api /usr/local/bin/kent-api
+COPY --from=frontend /app/frontend/dist /srv/dist
 
 ENV PORT=8080 \
-    STATIC_DIR=/app/dist \
+    STATIC_DIR=/srv/dist \
     RUST_LOG=kent_api=info,kent_domain=info,kent_db=info
 
-# NEO4J_PASSWORD and ADMIN_PASSWORD have no defaults and the server panics
-# without them — supply both at run time. Never bake them into the image.
 EXPOSE 8080
-
 USER kent
 
+# Lets compose gate dependents on `condition: service_healthy`.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -fsS "http://localhost:${PORT}/health" || exit 1
+    CMD wget -qO- "http://127.0.0.1:${PORT}/health" >/dev/null || exit 1
 
-CMD ["kent-api"]
+ENTRYPOINT ["kent-api"]
