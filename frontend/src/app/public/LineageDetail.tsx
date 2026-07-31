@@ -295,20 +295,20 @@ function AncestorTree({ assigned, brickWallId }: { assigned: AssignedPerson[]; b
             borderBottom: isBrick ? '2px solid #d5aba9' : '1px solid #f2f2f2',
           }}
         >
-          <span
-            onClick={hasChildren ? () => setExpanded((e) => ({ ...e, [nodeId]: !e[nodeId] })) : undefined}
-            style={{
-              cursor: hasChildren ? 'pointer' : 'default',
-              width: 20,
-              flex: '0 0 20px',
-              textAlign: 'center',
-              color: '#2b6c6e',
-              fontSize: 13,
-              userSelect: 'none',
-            }}
-          >
-            {hasChildren ? (isOpen ? '▾' : '▸') : '·'}
-          </span>
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => ({ ...e, [nodeId]: !e[nodeId] }))}
+              aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${personName(ap.person)}`}
+              style={{ ...treeToggleStyle, cursor: 'pointer' }}
+            >
+              {isOpen ? '▾' : '▸'}
+            </button>
+          ) : (
+            <span aria-hidden="true" style={treeToggleStyle}>
+              ·
+            </span>
+          )}
           <span style={{ width: 12, flex: '0 0 12px', borderTop: `1px solid ${TEAL}`, marginTop: 9 }} />
           <div style={{ flex: '1 1 auto' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
@@ -509,7 +509,7 @@ function ParticipantCard({ p, assigned }: { p: ParticipantData; assigned: Assign
     const who = m.participant.ftdnaKitNumber
       ? `Kit No. ${m.participant.ftdnaKitNumber}`
       : m.participant.displayName;
-    const level = m.markerLevel ? ` at ${m.markerLevel}/${m.markerLevel} markers` : '';
+    const level = m.markerLevel ? ` at ${m.markerLevel} markers` : '';
     const note = m.notes ? ` (${m.notes})` : '';
     return `Matches ${who}${level}${note}`;
   });
@@ -617,6 +617,19 @@ function ParticipantCard({ p, assigned }: { p: ParticipantData; assigned: Assign
     </article>
   );
 }
+
+const treeToggleStyle: React.CSSProperties = {
+  width: 20,
+  flex: '0 0 20px',
+  textAlign: 'center',
+  color: '#2b6c6e',
+  fontSize: 13,
+  userSelect: 'none',
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  lineHeight: 1.4,
+};
 
 const navBtn: React.CSSProperties = {
   padding: '6px 12px',

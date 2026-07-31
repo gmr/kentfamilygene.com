@@ -24,6 +24,10 @@ interface Draft {
 
 const EMPTY: Draft = { slug: '', title: '', summary: '', body: '', isPublished: false };
 
+// Mirrors RESERVED_SLUGS in crates/kent-domain/src/mutation.rs — a page on one
+// of these is unreachable, since /:slug is registered after the real routes.
+const RESERVED_SLUGS = ['admin', 'lineages', 'search', 'haplogroups', 'graphql', 'health'];
+
 export function slugify(raw: string): string {
   return raw
     .trim()
@@ -75,6 +79,10 @@ export function PageForm() {
     }
     if (!slug) {
       toast.error('Slug is required');
+      return;
+    }
+    if (RESERVED_SLUGS.includes(slug)) {
+      toast.error(`"${slug}" is reserved by the site's own routes`);
       return;
     }
     setSaving(true);

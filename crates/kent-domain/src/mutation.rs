@@ -1132,7 +1132,8 @@ impl MutationRoot {
 /// stored target can never become a `javascript:`/`data:` href on the public site.
 fn validate_nav_target(target: &str) -> async_graphql::Result<String> {
     let t = target.trim();
-    if t.starts_with('/') && !t.starts_with("//") {
+    // "/\evil.com" and "//evil.com" both resolve to another origin in a browser.
+    if t.starts_with('/') && !t.starts_with("//") && !t.starts_with("/\\") {
         return Ok(t.to_string());
     }
     let lower = t.to_ascii_lowercase();
@@ -1154,12 +1155,26 @@ fn clearable(input: Option<String>, existing: Option<String>) -> Option<String> 
     }
 }
 
+/// Paths the SPA router owns. A page on one of these is silently unreachable,
+/// because the /:slug route is registered after them.
+const RESERVED_SLUGS: &[&str] = &[
+    "admin",
+    "lineages",
+    "search",
+    "haplogroups",
+    "graphql",
+    "health",
+];
+
 /// Normalize a slug/key and reject one that normalizes away to nothing —
 /// an empty slug is unroutable and collides with the uniqueness constraint.
 fn require_slug(raw: &str) -> async_graphql::Result<String> {
     let slug = normalize_slug(raw);
     if slug.is_empty() {
         return Err("Slug must contain at least one letter or number".into());
+    }
+    if RESERVED_SLUGS.contains(&slug.as_str()) {
+        return Err(format!("\"{slug}\" is reserved by the site's own routes").into());
     }
     Ok(slug)
 }

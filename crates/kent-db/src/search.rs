@@ -153,9 +153,41 @@ pub async fn get_stats(graph: &Graph) -> Result<Stats, Error> {
             participant_count: row.get("participants").unwrap_or(0),
             haplogroup_count: row.get("haplogroups").unwrap_or(0),
             place_count: row.get("places").unwrap_or(0),
+            last_updated: get_last_updated(graph).await?,
         })
     } else {
         Ok(Stats::default())
+    }
+}
+
+/// Newest change the public site should advertise: any graph data node, plus
+/// published pages and snippets. Unpublished drafts are deliberately excluded —
+/// editing a draft must not move the site's public "last updated" date.
+/// Timestamps are ISO-8601, so a lexicographic max is a chronological max.
+async fn get_last_updated(graph: &Graph) -> Result<Option<String>, Error> {
+    let query = Query::new(
+        "CALL () { \
+           MATCH (n:Person|Participant|Lineage|Place|Haplogroup) \
+           RETURN max(coalesce(n.updated_date, n.created_date)) AS t \
+         UNION ALL \
+           MATCH (p:Page) WHERE p.is_published = true \
+           RETURN max(coalesce(p.updated_date, p.created_date)) AS t \
+         UNION ALL \
+           MATCH (s:Snippet) \
+           RETURN max(coalesce(s.updated_date, s.created_date)) AS t \
+         } \
+         RETURN max(t) AS last_updated"
+            .to_string(),
+    );
+
+    let mut result = graph.execute(query).await?;
+    if let Some(row) = result.next().await? {
+        Ok(row
+            .get::<String>("last_updated")
+            .ok()
+            .filter(|s| !s.is_empty()))
+    } else {
+        Ok(None)
     }
 }
 
@@ -167,6 +199,8 @@ pub struct Stats {
     pub participant_count: i64,
     pub haplogroup_count: i64,
     pub place_count: i64,
+    /// Newest timestamp across the data and the published CMS content.
+    pub last_updated: Option<String>,
 }
 
 fn escape_lucene(input: &str) -> String {

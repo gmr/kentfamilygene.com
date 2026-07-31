@@ -30,8 +30,11 @@ const SAFE_PROTOCOLS = ['http:', 'https:', 'mailto:', 'tel:'];
  * href — `javascript:` and `data:` targets are coerced to a dead link.
  */
 export function safeTarget(target: string): string {
-  // Internal path; "//host" would be protocol-relative, so reject it.
-  if (target.startsWith('/') && !target.startsWith('//')) return target;
+  // Internal path. "//host" is protocol-relative and "/\\host" is resolved as
+  // an authority by browsers — both leave the site, so reject them.
+  if (target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/\\')) {
+    return target;
+  }
   try {
     return SAFE_PROTOCOLS.includes(new URL(target).protocol) ? target : '#';
   } catch {

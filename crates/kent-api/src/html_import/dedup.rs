@@ -94,6 +94,17 @@ pub struct LineageKey {
     pub name: String,
 }
 
+/// Canonicalize a value used in a dedup key: trim, collapse internal runs of
+/// whitespace, and lowercase. Without this, "Ann  Smith" and "ann smith" hash
+/// to different keys and produce duplicate nodes for the same person.
+fn canonical(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 impl DedupContext {
     pub fn new() -> Self {
         let state_map: HashMap<String, String> = STATE_ABBREVS
@@ -119,8 +130,8 @@ impl DedupContext {
             .and_then(|d| d.split('-').next().map(|y| y.to_string()));
 
         let key = PersonKey {
-            given_name: person.given_name.to_lowercase(),
-            surname: person.surname.to_lowercase(),
+            given_name: canonical(&person.given_name),
+            surname: canonical(&person.surname),
             birth_year,
         };
 
@@ -138,8 +149,8 @@ impl DedupContext {
     /// Get or create a haplogroup UUID.
     pub fn get_or_create_haplogroup_id(&mut self, name: &str, subclade: &str) -> String {
         let key = HaplogroupKey {
-            name: name.to_string(),
-            subclade: subclade.to_string(),
+            name: canonical(name),
+            subclade: canonical(subclade),
         };
 
         self.haplogroups
@@ -152,9 +163,9 @@ impl DedupContext {
     pub fn get_or_create_place_id(&mut self, raw_place: &str) -> (String, NormalizedPlace) {
         let normalized = self.normalize_place(raw_place);
         let key = PlaceKey {
-            name: normalized.name.to_lowercase(),
-            state: normalized.state.to_lowercase(),
-            country: normalized.country.to_lowercase(),
+            name: canonical(&normalized.name),
+            state: canonical(&normalized.state),
+            country: canonical(&normalized.country),
         };
 
         let id = self
@@ -173,13 +184,13 @@ impl DedupContext {
         {
             return self
                 .participants
-                .entry(kit.to_string())
+                .entry(canonical(kit))
                 .or_insert_with(|| Uuid::now_v7().to_string())
                 .clone();
         }
         // No kit number — use name as fallback key (less reliable)
         self.participants
-            .entry(format!("name:{}", name.to_lowercase()))
+            .entry(format!("name:{}", canonical(name)))
             .or_insert_with(|| Uuid::now_v7().to_string())
             .clone()
     }
@@ -187,13 +198,9 @@ impl DedupContext {
     /// Get or create a lineage UUID.
     pub fn get_or_create_lineage_id(&mut self, lineage: &ParsedLineage) -> String {
         let key = LineageKey {
-            origin_state: lineage
-                .origin_state
-                .clone()
-                .unwrap_or_default()
-                .to_lowercase(),
+            origin_state: canonical(lineage.origin_state.as_deref().unwrap_or_default()),
             lineage_number: lineage.lineage_number.unwrap_or(0),
-            name: lineage.name.to_lowercase(),
+            name: canonical(&lineage.name),
         };
 
         self.lineages

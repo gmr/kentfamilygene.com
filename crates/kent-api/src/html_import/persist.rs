@@ -10,6 +10,16 @@ const KENT_NAMESPACE: Uuid = Uuid::from_bytes([
     0x6b, 0x65, 0x6e, 0x74, 0x2d, 0x66, 0x61, 0x6d, 0x69, 0x6c, 0x79, 0x2d, 0x64, 0x6e, 0x61, 0x21,
 ]);
 
+/// Canonicalize a value before it becomes part of a deterministic ID: trim,
+/// collapse whitespace runs, lowercase.
+fn canonical_key(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 /// Generate a deterministic UUID from a namespace + key string.
 fn deterministic_id(key: &str) -> String {
     Uuid::new_v5(&KENT_NAMESPACE, key.as_bytes()).to_string()
@@ -31,7 +41,7 @@ fn title_case(input: &str) -> String {
 fn title_case_opt(input: &Option<String>) -> Option<String> {
     input
         .as_ref()
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.trim().is_empty())
         .map(|s| title_case(s))
 }
 
@@ -665,10 +675,13 @@ async fn process_participant(
 
         // Create spouse persons and SPOUSE_OF relationships
         for spouse in &entry.person.spouses {
+            // Canonicalize the key inputs: the persisted names are title-cased,
+            // so hashing the raw parse would give "ANN  SMITH" and "Ann Smith"
+            // different IDs and duplicate the spouse on re-import.
             let spouse_person_id = deterministic_id(&format!(
                 "{person_id}:spouse:{}:{}:{}",
-                spouse.given_name.as_deref().unwrap_or(""),
-                spouse.surname,
+                canonical_key(spouse.given_name.as_deref().unwrap_or("")),
+                canonical_key(&spouse.surname),
                 spouse.marriage_order
             ));
             let query = Query::new(

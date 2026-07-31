@@ -6,5 +6,6 @@ query Stats {
     participantCount
     haplogroupCount
     placeCount
+    lastUpdated
   }
 }

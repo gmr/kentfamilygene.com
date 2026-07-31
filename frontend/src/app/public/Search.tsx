@@ -148,7 +148,19 @@ export function Search() {
           return (
             <div
               key={`${r.resultType}-${r.id}`}
-              onClick={() => navFor(r.resultType, r.id)}
+              onClick={clickable ? () => navFor(r.resultType, r.id) : undefined}
+              onKeyDown={
+                clickable
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navFor(r.resultType, r.id);
+                      }
+                    }
+                  : undefined
+              }
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
               className={clickable ? 'kent-card-link' : undefined}
               style={{
                 cursor: clickable ? 'pointer' : 'default',

@@ -174,10 +174,11 @@ async fn run_server() {
         tracing::warn!("Failed to create search indexes (Neo4j may not support fulltext): {e}");
     }
 
-    // CMS slug/key uniqueness
-    if let Err(e) = kent_db::content::ensure_content_constraints(&graph).await {
-        tracing::warn!("Failed to create content constraints: {e}");
-    }
+    // CMS slug/key uniqueness. Fatal, unlike the search indexes: without these
+    // constraints duplicate slugs are accepted and page(slug:) becomes ambiguous.
+    kent_db::content::ensure_content_constraints(&graph)
+        .await
+        .expect("Failed to create CMS content constraints");
 
     let schema = kent_domain::build_schema(graph);
 

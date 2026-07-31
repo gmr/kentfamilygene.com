@@ -58,8 +58,11 @@ export function LineageBrowser() {
   const regionOptions = useMemo(() => {
     const set = new Set<string>();
     items.forEach((l) => l.region && set.add(l.region));
+    // A ?region= the data doesn't contain (or hasn't loaded yet) would leave the
+    // select showing "All regions" while the filter still excluded everything.
+    if (region !== 'All regions') set.add(region);
     return ['All regions', ...Array.from(set).sort()];
-  }, [items]);
+  }, [items, region]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();

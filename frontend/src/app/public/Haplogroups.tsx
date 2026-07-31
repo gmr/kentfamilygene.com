@@ -73,7 +73,10 @@ export function Haplogroups() {
                 </span>
                 {h.participants.length > 0 && (
                   <button
+                    type="button"
                     onClick={() => setOpen(isOpen ? null : h.id)}
+                    aria-expanded={isOpen}
+                    aria-label={`${isOpen ? 'Hide' : 'Show'} participants with haplogroup ${h.abbreviation ?? h.name}`}
                     style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: 13.5, fontWeight: 600, color: '#2b6c6e', background: 'none', border: 'none' }}
                   >
                     {isOpen ? '▾' : '▸'} Participants

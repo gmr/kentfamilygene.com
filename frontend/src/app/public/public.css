@@ -251,3 +251,50 @@
   padding: 7px 10px;
   text-align: left;
 }
+
+/* Mobile navigation drawer (the desktop links hide below 640px). */
+.kent-nav-toggle {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: 1.5px solid #191919;
+  padding: 6px 12px;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  color: #191919;
+}
+.kent-mobile-nav {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 22px 16px;
+  border-top: 1px solid #cccccc;
+  background: #fbfbfa;
+}
+.kent-mobile-nav .kent-navlink {
+  padding: 10px 0;
+  font-size: 16px;
+}
+.kent-mobile-cta {
+  margin-top: 8px;
+  padding: 10px 18px;
+  text-align: center;
+  background: #ffdead;
+  border: 1.5px solid #191919;
+  font-weight: 700;
+  font-size: 15px;
+  color: #191919;
+  text-decoration: none;
+}
+@media (max-width: 640px) {
+  .kent-nav-toggle {
+    display: block;
+  }
+  .kent-mobile-nav {
+    display: flex;
+  }
+  .kent-desktop-nav .kent-cta {
+    display: none;
+  }
+}

@@ -10,10 +10,12 @@ pub async fn find_all_participants(
     limit: i64,
 ) -> Result<(Vec<ParticipantRow>, i64), Error> {
     // Neo4j sorts NULL first on DESC, so push undated members to the end.
+    // p.id last: join_date is often year-only, and ties without a unique
+    // tie-breaker make SKIP/LIMIT pagination unstable between requests.
     let order = if newest_first {
-        "p.join_date IS NULL, p.join_date DESC"
+        "p.join_date IS NULL, p.join_date DESC, p.id"
     } else {
-        "p.display_name"
+        "p.display_name, p.id"
     };
     let (query, count_query) = if let Some(true) = active_only {
         (

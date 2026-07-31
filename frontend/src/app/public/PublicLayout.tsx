@@ -1,9 +1,10 @@
-import { NavLink, Link, Outlet } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Link, Outlet, useLocation } from 'react-router-dom';
 import { useStatsQuery, useNavItemsQuery } from '../../generated/graphql';
 import { NavTarget, Snippet, groupFooterItems, isExternal, safeTarget, type CmsNavItem } from './cms';
+import { formatLastUpdated } from './format';
 import './public.css';
 
-const LAST_UPDATED = 'Jul 2026';
 
 /** Shown until navigation is managed in the admin CMS. */
 const FALLBACK_HEADER: CmsNavItem[] = [
@@ -21,14 +22,23 @@ const FALLBACK_FOOTER: CmsNavItem[] = [
 ];
 
 export function PublicLayout() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+  // Never leave the drawer open across a navigation.
+  useEffect(() => setMenuOpen(false), [pathname]);
+
   const [{ data }] = useStatsQuery();
   const personCount = data?.stats?.personCount;
+  const lastUpdated = formatLastUpdated(data?.stats?.lastUpdated);
 
   const [{ data: navData }] = useNavItemsQuery();
   const managed = navData?.navItems ?? [];
   const headerItems = managed.filter((i) => i.location === 'header');
   const footerItems = managed.filter((i) => i.location === 'footer');
-  const nav = headerItems.length > 0 ? headerItems : FALLBACK_HEADER;
+  const navItems = (headerItems.length > 0 ? headerItems : FALLBACK_HEADER).map((item) => ({
+    ...item,
+    target: safeTarget(item.target),
+  }));
   const footerGroups = groupFooterItems(footerItems.length > 0 ? footerItems : FALLBACK_FOOTER);
 
   return (
@@ -111,7 +121,7 @@ export function PublicLayout() {
             style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <span className="kent-nav-items" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {nav.map((item) => ({ ...item, target: safeTarget(item.target) })).map((item) =>
+              {navItems.map((item) =>
                 item.target === '#' || isExternal(item.target) ? (
                   <NavTarget key={item.id} target={item.target} className="kent-navlink">
                     {item.label}
@@ -145,7 +155,31 @@ export function PublicLayout() {
               Join the Project
             </Link>
           </nav>
+
+          <button
+            type="button"
+            className="kent-nav-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="kent-mobile-nav"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? '✕' : '☰'}
+          </button>
         </div>
+
+        {menuOpen && (
+          <nav id="kent-mobile-nav" className="kent-mobile-nav">
+            {navItems.map((item) => (
+              <NavTarget key={item.id} target={item.target} className="kent-navlink">
+                {item.label}
+              </NavTarget>
+            ))}
+            <Link to="/#participate" className="kent-mobile-cta">
+              Join the Project
+            </Link>
+          </nav>
+        )}
       </header>
 
       <main id="kent-main">
@@ -220,7 +254,7 @@ export function PublicLayout() {
             }}
           >
             <span>
-              Last updated {LAST_UPDATED}
+              Last updated {lastUpdated}
               {personCount != null ? ` · ${personCount.toLocaleString()} individuals catalogued` : ''}
             </span>
             <span style={{ fontStyle: 'italic' }}>

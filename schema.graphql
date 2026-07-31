@@ -285,6 +285,8 @@ type Stats {
   participantCount: Int!
   haplogroupCount: Int!
   placeCount: Int!
+  # Newest data change or published CMS edit, ISO-8601
+  lastUpdated: String
 }
 
 # ── CMS ─────────────────────────────────────────────────────────────

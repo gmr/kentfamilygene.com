@@ -241,6 +241,7 @@ impl QueryRoot {
             participant_count: s.participant_count as i32,
             haplogroup_count: s.haplogroup_count as i32,
             place_count: s.place_count as i32,
+            last_updated: s.last_updated,
         })
     }
 
@@ -431,4 +432,6 @@ pub struct Stats {
     pub participant_count: i32,
     pub haplogroup_count: i32,
     pub place_count: i32,
+    /// ISO-8601 timestamp of the newest data change or published CMS edit.
+    pub last_updated: Option<String>,
 }

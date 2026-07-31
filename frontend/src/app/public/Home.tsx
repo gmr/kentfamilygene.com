@@ -4,9 +4,8 @@ import {
   usePublicNewestMembersQuery,
   usePublicRegionOverviewQuery,
 } from '../../generated/graphql';
-import { membershipLabel, membershipPill } from './format';
+import { formatLastUpdated, membershipLabel, membershipPill } from './format';
 
-const LAST_UPDATED = 'Jul 2026';
 const serif = "'Source Serif 4', serif";
 const mono = "'Spline Sans Mono', monospace";
 
@@ -129,7 +128,7 @@ export function Home() {
               ))}
             </div>
             <div style={{ padding: '14px 18px', fontSize: 13, color: '#555', fontStyle: 'italic' }}>
-              Last updated {LAST_UPDATED}. Living individuals are privacy-masked.
+              Last updated {formatLastUpdated(s?.lastUpdated)}. Living individuals are privacy-masked.
             </div>
           </div>
         </div>

@@ -1,3 +1,18 @@
+/** Shown only if the graph has no timestamps at all (empty database). */
+export const LAST_UPDATED_FALLBACK = 'recently';
+
+/**
+ * Render `Stats.lastUpdated` (ISO-8601) as "Jul 2026". The value is the newest
+ * data change or published CMS edit, so the footer tracks reality instead of a
+ * hand-edited constant.
+ */
+export function formatLastUpdated(iso?: string | null): string {
+  if (!iso) return LAST_UPDATED_FALLBACK;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return LAST_UPDATED_FALLBACK;
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
 // Formatting helpers shared across the public site. Genealogy dates are fuzzy
 // strings with a separate modifier enum; names carry prefixes/suffixes and
 // privacy labels. These helpers turn the GraphQL shapes into the display
@@ -50,7 +65,11 @@ export function isMasked(p: PersonLike): boolean {
 export function personName(p: PersonLike): string {
   const given = (p.givenName ?? '').trim();
   const surname = (p.surname ?? '').trim();
-  if (!surname && given) return given; // masked or single-token label
+  // Importer placeholders store the role in privacyLabel and leave the names
+  // empty. Masking copies the label into givenName for anonymous callers, so
+  // without this fallback the node renders blank to a signed-in admin.
+  if (!given && !surname) return (p.privacyLabel ?? '').trim();
+  if (!surname) return given; // masked or single-token label
   return [given, surname, (p.nameSuffix ?? '').trim()].filter(Boolean).join(' ');
 }
 
