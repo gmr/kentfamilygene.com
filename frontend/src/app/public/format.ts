@@ -1,6 +1,10 @@
 /** Shown only if the graph has no timestamps at all (empty database). */
 export const LAST_UPDATED_FALLBACK = 'recently';
 
+/** The project's home timezone. Pinned so a timestamp near a month boundary
+ * renders as the same month for every visitor, not the viewer's local one. */
+export const SITE_TIME_ZONE = 'America/New_York';
+
 /**
  * Render `Stats.lastUpdated` (ISO-8601) as "Jul 2026". The value is the newest
  * data change or published CMS edit, so the footer tracks reality instead of a
@@ -10,7 +14,11 @@ export function formatLastUpdated(iso?: string | null): string {
   if (!iso) return LAST_UPDATED_FALLBACK;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return LAST_UPDATED_FALLBACK;
-  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: SITE_TIME_ZONE,
+  });
 }
 
 // Formatting helpers shared across the public site. Genealogy dates are fuzzy

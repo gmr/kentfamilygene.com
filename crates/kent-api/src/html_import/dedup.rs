@@ -179,12 +179,13 @@ impl DedupContext {
 
     /// Get or create a participant UUID, deduplicating by kit number.
     pub fn get_or_create_participant_id(&mut self, kit_number: Option<&str>, name: &str) -> String {
-        if let Some(kit) = kit_number
-            && !kit.is_empty()
-        {
+        // Canonicalize *before* the emptiness check: a whitespace-only kit
+        // number is non-empty but canonicalizes to "", so every such
+        // participant would otherwise collide on a single key and merge.
+        if let Some(kit) = kit_number.map(canonical).filter(|k| !k.is_empty()) {
             return self
                 .participants
-                .entry(canonical(kit))
+                .entry(kit)
                 .or_insert_with(|| Uuid::now_v7().to_string())
                 .clone();
         }
