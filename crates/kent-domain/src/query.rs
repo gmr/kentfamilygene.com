@@ -199,12 +199,13 @@ impl QueryRoot {
             .as_ref()
             .map(|ts| ts.iter().map(|s| s.as_str()).collect());
 
-        let results =
-            kent_db::search::search_all(graph, &query, type_refs.as_deref(), limit).await?;
-
         // Search bypasses the Person resolver, so masking has to happen here or
         // a living person hidden everywhere else surfaces by name in results.
         let public = privacy::is_public(ctx);
+
+        let results =
+            kent_db::search::search_all(graph, &query, type_refs.as_deref(), limit, public).await?;
+
         let items = results
             .into_iter()
             .map(|r| {

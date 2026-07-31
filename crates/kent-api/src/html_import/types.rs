@@ -125,6 +125,10 @@ pub struct ParsedSpouse {
     pub given_name: Option<String>,
     pub surname: String,
     pub marriage_order: i64,
+    /// Marriage date/place split off the end of the spouse text. These live on
+    /// the `SPOUSE_OF` edge, not on the spouse's own Person node.
+    pub marriage_date: Option<String>,
+    pub marriage_place: Option<String>,
 }
 
 /// Result of parsing a genealogical date.

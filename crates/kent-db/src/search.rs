@@ -46,11 +46,17 @@ pub async fn ensure_search_indexes(graph: &Graph) -> Result<(), Error> {
 }
 
 /// Search across multiple node types using full-text indexes.
+/// `public_only` drops Person hits that belong to no lineage. The public site
+/// routes a person hit to their first lineage, so a lineage-less person — the
+/// importer creates them for spouses the source never assigns — renders a
+/// result that does nothing when clicked. Admins still see them; the admin UI
+/// has a person detail page to land on.
 pub async fn search_all(
     graph: &Graph,
     query_text: &str,
     types: Option<&[&str]>,
     limit: i64,
+    public_only: bool,
 ) -> Result<Vec<SearchResult>, Error> {
     let mut results = Vec::new();
 
@@ -87,9 +93,16 @@ pub async fn search_all(
             "null AS death_date, null AS birth_date_sort, null AS privacy_label"
         };
 
+        let lineage_filter = if public_only && *search_type == "person" {
+            "WHERE (node)-[:BELONGS_TO]->(:Lineage) "
+        } else {
+            ""
+        };
+
         let query_str = format!(
             "CALL db.index.fulltext.queryNodes('{index_name}', $query) \
              YIELD node, score \
+             {lineage_filter}\
              RETURN node.id AS id, labels(node)[0] AS label, \
                     {display_expr} AS display, score, {privacy_expr} \
              ORDER BY score DESC LIMIT $limit"
