@@ -54,8 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const header = 'Basic ' + btoa(`${username}:${password}`);
 
-    // Test credentials by calling the stats query (lightweight, requires no auth
-    // but we'll verify the server accepts the header with an admin query)
+    // Must be an auth-gated query: a public one (like stats) succeeds for any
+    // password, which let wrong credentials be stored and then fail on every
+    // admin screen.
     const res = await fetch('/graphql', {
       method: 'POST',
       headers: {
@@ -63,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         'Authorization': header,
       },
       body: JSON.stringify({
-        query: '{ stats { lineageCount } }',
+        query: '{ adminNotes(limit: 1) { total } }',
       }),
     });
 
@@ -73,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const json = await res.json();
     if (json.errors) {
-      throw new Error(json.errors[0]?.message || 'Authentication failed');
+      throw new Error('Invalid credentials');
     }
 
     const state: AuthState = { username, password };
