@@ -1,0 +1,26 @@
+# Build artifacts — the image builds its own
+target/
+dist/
+frontend/dist/
+frontend/node_modules/
+frontend/src/generated/
+frontend/.vite/
+
+# Secrets and local state
+.env
+*.pem
+
+# Source data dumps (700K+ of imported HTML)
+source.html
+data/
+
+# VCS, tooling, docs
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+plans/
+*.md
+!README.md
+.DS_Store
