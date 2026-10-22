@@ -269,9 +269,9 @@ fn parse_kit_bracket(html: &str, warnings: &mut Vec<String>) -> Option<ParsedKit
     let raw_decoded = html_escape::decode_html_entities(raw).to_string();
 
     let membership_type = if raw_decoded.contains("Associate Researcher") {
-        "Associate Researcher".to_string()
+        "ASSOCIATE_RESEARCHER".to_string()
     } else {
-        "Project Member".to_string()
+        "PROJECT_MEMBER".to_string()
     };
 
     let ftdna_kit_number = KIT_NUMBER_RE
@@ -397,7 +397,7 @@ mod tests {
             r#"[Project Member, FTDNA Kit No. 967523, R. A. Kent, 111 Markers, Joined 2021]"#;
         let mut warnings = Vec::new();
         let bracket = parse_kit_bracket(html, &mut warnings).unwrap();
-        assert_eq!(bracket.membership_type, "Project Member");
+        assert_eq!(bracket.membership_type, "PROJECT_MEMBER");
         assert_eq!(bracket.ftdna_kit_number.as_deref(), Some("967523"));
         assert_eq!(bracket.marker_count, Some(111));
         assert_eq!(bracket.join_year.as_deref(), Some("2021"));
@@ -416,7 +416,7 @@ mod tests {
         let html = r#"[Associate Researcher, Joined 2020]"#;
         let mut warnings = Vec::new();
         let bracket = parse_kit_bracket(html, &mut warnings).unwrap();
-        assert_eq!(bracket.membership_type, "Associate Researcher");
+        assert_eq!(bracket.membership_type, "ASSOCIATE_RESEARCHER");
         assert_eq!(bracket.ftdna_kit_number, None);
     }
 

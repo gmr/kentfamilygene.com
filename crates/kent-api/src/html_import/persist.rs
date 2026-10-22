@@ -421,7 +421,7 @@ async fn process_participant(
         .kit_bracket
         .as_ref()
         .map(|kb| kb.membership_type.clone())
-        .unwrap_or_else(|| "Project Member".to_string());
+        .unwrap_or_else(|| "PROJECT_MEMBER".to_string());
 
     let join_date: Option<String> = block
         .kit_bracket
