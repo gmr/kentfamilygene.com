@@ -11,14 +11,12 @@ const FALLBACK_HEADER: CmsNavItem[] = [
   { id: 'f-home', location: 'header', groupLabel: null, label: 'Home', target: '/', sortOrder: 0 },
   { id: 'f-lin', location: 'header', groupLabel: null, label: 'Lineages', target: '/lineages', sortOrder: 1 },
   { id: 'f-search', location: 'header', groupLabel: null, label: 'Search', target: '/search', sortOrder: 2 },
-  { id: 'f-haplo', location: 'header', groupLabel: null, label: 'Haplogroups', target: '/haplogroups', sortOrder: 3 },
 ];
 
 const FALLBACK_FOOTER: CmsNavItem[] = [
   { id: 'f-fhome', location: 'footer', groupLabel: 'Navigate', label: 'Home', target: '/', sortOrder: 0 },
   { id: 'f-flin', location: 'footer', groupLabel: 'Navigate', label: 'Lineages', target: '/lineages', sortOrder: 1 },
   { id: 'f-fsearch', location: 'footer', groupLabel: 'Navigate', label: 'Search', target: '/search', sortOrder: 2 },
-  { id: 'f-fhaplo', location: 'footer', groupLabel: 'Navigate', label: 'Haplogroups', target: '/haplogroups', sortOrder: 3 },
 ];
 
 export function PublicLayout() {
@@ -111,7 +109,7 @@ export function PublicLayout() {
                   fontWeight: 600,
                 }}
               >
-                Genetic Genealogy · Est. 2004
+                Established in 2004
               </span>
             </span>
           </Link>
@@ -138,22 +136,6 @@ export function PublicLayout() {
                 ),
               )}
             </span>
-            <Link
-              to="/#participate"
-              className="kent-cta"
-              style={{
-                marginLeft: 10,
-                padding: '9px 18px',
-                background: '#ffdead',
-                border: '1.5px solid #191919',
-                fontWeight: 700,
-                fontSize: 15,
-                color: '#191919',
-                textDecoration: 'none',
-              }}
-            >
-              Join the Project
-            </Link>
           </nav>
 
           <button
@@ -175,9 +157,6 @@ export function PublicLayout() {
                 {item.label}
               </NavTarget>
             ))}
-            <Link to="/#participate" className="kent-mobile-cta">
-              Join the Project
-            </Link>
           </nav>
         )}
       </header>

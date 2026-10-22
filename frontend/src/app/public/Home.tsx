@@ -4,31 +4,37 @@ import {
   usePublicNewestMembersQuery,
   usePublicRegionOverviewQuery,
 } from '../../generated/graphql';
-import { formatLastUpdated, membershipLabel, membershipPill } from './format';
+import { REGIONS, formatLastUpdated, membershipLabel, membershipPill, regionOf } from './format';
 
 const serif = "'Source Serif 4', serif";
 const mono = "'Spline Sans Mono', monospace";
+const FTDNA_GROUP_URL = 'https://www.familytreedna.com/groups/kent/about';
 
 export function Home() {
   const [{ data: statsData }] = useStatsQuery();
   const [{ data: membersData }] = usePublicNewestMembersQuery({ variables: { limit: 8 } });
   const [{ data: regionData }] = usePublicRegionOverviewQuery();
 
+  const regionCounts = new Map<string, number>();
+  for (const l of regionData?.lineages.items ?? []) {
+    const r = regionOf(l);
+    regionCounts.set(r, (regionCounts.get(r) ?? 0) + 1);
+  }
+
   const s = statsData?.stats;
   const heroStats = [
     { value: s?.lineageCount, label: 'Lineages' },
     { value: s?.participantCount, label: 'Participants' },
-    { value: s?.regionCount, label: 'Regions' },
-    { value: s?.haplogroupCount, label: 'Haplogroups' },
+    // Counted client-side: the site's region scheme is REGIONS, not the imported value.
+    { value: regionData ? regionCounts.size : undefined, label: 'Regions' },
+    { value: s?.haplogroupCount, label: 'Haplogroups/Subclades' },
   ];
   // Ordered newest-first by the server; see participants(newestFirst:).
   const members = membersData?.participants.items ?? [];
 
-  const regionCounts = new Map<string, number>();
-  for (const l of regionData?.lineages.items ?? []) {
-    if (l.region) regionCounts.set(l.region, (regionCounts.get(l.region) ?? 0) + 1);
-  }
-  const regions = Array.from(regionCounts.keys()).sort((a, b) => a.localeCompare(b));
+  const order = REGIONS.map((r) => r.name);
+  const rank = (r: string) => (order.includes(r) ? order.indexOf(r) : order.length);
+  const regions = Array.from(regionCounts.keys()).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 
   return (
     <div>
@@ -57,13 +63,13 @@ export function Home() {
                 letterSpacing: '-0.5px',
               }}
             >
-              Tracing the <span style={{ fontStyle: 'italic', color: '#2b6c6e' }}>Kent</span>{' '}
-              surname, one lineage at a time.
+              Connecting researchers tracing the{' '}
+              <span style={{ fontStyle: 'italic', color: '#2b6c6e' }}>Kent</span> surname.
             </h1>
             <p style={{ fontSize: 19, lineHeight: 1.55, color: '#333', maxWidth: 560, margin: '0 0 30px' }}>
-              A <strong>free</strong> community of genealogy researchers collaborating on the KENT
-              surname — connecting DNA evidence with documented family lines across four centuries
-              and two continents.
+              The Kent Family &amp; DNA Project is a <strong>free</strong> community welcoming anyone
+              researching a KENT family surname. There are different ways to participate, including
+              optional DNA testing.
             </p>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
               <Link
@@ -72,20 +78,6 @@ export function Home() {
                 style={{ padding: '13px 24px', background: '#191919', color: '#fbfbfa', fontWeight: 600, fontSize: 16 }}
               >
                 Browse the lineages →
-              </Link>
-              <Link
-                to="/search"
-                className="kent-btn-outline"
-                style={{
-                  padding: '13px 24px',
-                  background: 'transparent',
-                  color: '#191919',
-                  border: '1.5px solid #191919',
-                  fontWeight: 600,
-                  fontSize: 16,
-                }}
-              >
-                Search a name
               </Link>
             </div>
           </div>
@@ -134,8 +126,106 @@ export function Home() {
         </div>
       </section>
 
+      {/* How to participate */}
+      <section id="participate" style={{ maxWidth: 1240, margin: '0 auto', padding: '40px 22px 20px', scrollMarginTop: 84 }}>
+        <h2 style={{ fontFamily: serif, fontWeight: 700, fontSize: 30, margin: '0 0 8px' }}>How to participate</h2>
+        <p style={{ fontSize: 16, color: '#555', margin: '0 0 24px', maxWidth: 640 }}>
+          There are two ways to participate. Both are free, and DNA testing is optional.
+        </p>
+        <div
+          className="kent-part-grid"
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}
+        >
+          <ParticipateCard badge="Option 1" badgeBg="#f5deb3" title="List your own KENT ancestry">
+            <p style={{ margin: 0, color: '#333', fontSize: 15.5 }}>
+              Your lineage will be listed in the appropriate region alongside other researchers
+              associated with that area. DNA testing is not required.
+            </p>
+          </ParticipateCard>
+          <ParticipateCard
+            badge="Option 2"
+            badgeBg="#87c2c4"
+            title="Use DNA testing to connect with other KENT researchers"
+          >
+            <p style={{ margin: '0 0 14px', color: '#333', fontSize: 15.5 }}>
+              DNA results can help establish how different KENT families relate to each other
+              genetically, compared against results from other project members. Choose whichever
+              applies to you:
+            </p>
+            <ul style={{ margin: 0, paddingLeft: 18, color: '#444', fontSize: 15, lineHeight: 1.6 }}>
+              <li style={{ marginBottom: 10 }}>
+                <strong>I am considering taking an optional DNA test.</strong> See your testing
+                options before making this personal decision.
+              </li>
+              <li style={{ marginBottom: 10 }}>
+                <strong>I&apos;ve already tested with Family Tree DNA.</strong>{' '}
+                <a href={FTDNA_GROUP_URL} target="_blank" rel="noreferrer">
+                  Add the Kent Family &amp; DNA Project
+                </a>{' '}
+                to your existing account so your results can be compared with other members.
+              </li>
+              <li>
+                <strong>I&apos;ve already tested with AncestryDNA and/or 23andMe.</strong> Transfer
+                your results for free to our preferred company, Family Tree DNA, and get a list of
+                your matches in one of the world&apos;s largest genetic databases. Once your new
+                account is set up, add the Kent Family &amp; DNA Project so your results can be
+                compared with other members. The transfer itself is free. If you&apos;d like access
+                to advanced features like the chromosome browser and myOrigins, you can unlock them
+                with an optional one time $19 fee. FAQ on the free transfer program.
+              </li>
+            </ul>
+          </ParticipateCard>
+        </div>
+      </section>
+
+      {/* Browse by region */}
+      <section style={{ maxWidth: 1240, margin: '0 auto', padding: '44px 22px 32px' }}>
+        <div
+          style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}
+        >
+          <h2 style={{ fontFamily: serif, fontWeight: 700, fontSize: 30, margin: 0 }}>Browse by region</h2>
+          <Link to="/lineages" style={{ fontSize: 15, fontWeight: 600 }}>View all lineages →</Link>
+        </div>
+        <div
+          className="kent-region-grid"
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}
+        >
+          {regions.map((r) => (
+            <Link
+              key={r}
+              to={`/lineages?region=${encodeURIComponent(r)}`}
+              className="kent-region-tile"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                padding: 16,
+                background: '#fff',
+                border: '1px solid #cccccc',
+                color: '#191919',
+                textDecoration: 'none',
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: 15.5 }}>{r}</span>
+              <span
+                style={{
+                  fontFamily: mono,
+                  fontSize: 13,
+                  color: '#555',
+                  background: '#f0f0f0',
+                  padding: '2px 8px',
+                  borderRadius: 10,
+                }}
+              >
+                {regionCounts.get(r) ?? 0}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
       {/* Newest members */}
-      <section style={{ maxWidth: 1240, margin: '0 auto', padding: '52px 22px 20px' }}>
+      <section style={{ maxWidth: 1240, margin: '0 auto', padding: '20px 22px 72px' }}>
         <div
           style={{
             display: 'flex',
@@ -188,80 +278,6 @@ export function Home() {
           })}
         </div>
       </section>
-
-      {/* How to participate */}
-      <section id="participate" style={{ maxWidth: 1240, margin: '0 auto', padding: '40px 22px 20px', scrollMarginTop: 84 }}>
-        <h2 style={{ fontFamily: serif, fontWeight: 700, fontSize: 30, margin: '0 0 8px' }}>How to participate</h2>
-        <p style={{ fontSize: 16, color: '#555', margin: '0 0 24px', maxWidth: 640 }}>
-          There are two ways to contribute. Both are free — the project is run entirely by volunteers.
-        </p>
-        <div
-          className="kent-part-grid"
-          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}
-        >
-          <ParticipateCard
-            badge="Project Member"
-            badgeBg="#87c2c4"
-            title="Y-DNA test the Kent line"
-            body="Take a Y-DNA test through FamilyTreeDNA and link your documented Kent ancestry. Your results place you within a genetic lineage and help break through brick walls."
-            bullets={['Direct paternal Kent-surname line', '67 or 111 marker test recommended', 'Matched against every project lineage']}
-          />
-          <ParticipateCard
-            badge="Associate Researcher"
-            badgeBg="#f5deb3"
-            title="Contribute research & atDNA"
-            body="Not descended through an unbroken Kent male line? You can still contribute documented trees and autosomal (Family Finder) results to strengthen the evidence."
-            bullets={['Any relationship to a Kent line', 'atDNA / Family Finder welcome', 'Share GEDCOMs and source records']}
-          />
-        </div>
-      </section>
-
-      {/* Browse by region */}
-      <section style={{ maxWidth: 1240, margin: '0 auto', padding: '44px 22px 72px' }}>
-        <div
-          style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}
-        >
-          <h2 style={{ fontFamily: serif, fontWeight: 700, fontSize: 30, margin: 0 }}>Browse by region</h2>
-          <Link to="/lineages" style={{ fontSize: 15, fontWeight: 600 }}>View all lineages →</Link>
-        </div>
-        <div
-          className="kent-region-grid"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}
-        >
-          {regions.map((r) => (
-            <Link
-              key={r}
-              to={`/lineages?region=${encodeURIComponent(r)}`}
-              className="kent-region-tile"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 10,
-                padding: 16,
-                background: '#fff',
-                border: '1px solid #cccccc',
-                color: '#191919',
-                textDecoration: 'none',
-              }}
-            >
-              <span style={{ fontWeight: 600, fontSize: 15.5 }}>{r}</span>
-              <span
-                style={{
-                  fontFamily: mono,
-                  fontSize: 13,
-                  color: '#555',
-                  background: '#f0f0f0',
-                  padding: '2px 8px',
-                  borderRadius: 10,
-                }}
-              >
-                {regionCounts.get(r) ?? 0}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
@@ -270,14 +286,12 @@ function ParticipateCard({
   badge,
   badgeBg,
   title,
-  body,
-  bullets,
+  children,
 }: {
   badge: string;
   badgeBg: string;
   title: string;
-  body: string;
-  bullets: string[];
+  children: React.ReactNode;
 }) {
   return (
     <div style={{ border: '1px solid #cccccc', background: '#fff', padding: 26 }}>
@@ -296,12 +310,7 @@ function ParticipateCard({
         {badge}
       </div>
       <h3 style={{ fontFamily: serif, fontWeight: 600, fontSize: 21, margin: '16px 0 10px' }}>{title}</h3>
-      <p style={{ margin: '0 0 14px', color: '#333', fontSize: 15.5 }}>{body}</p>
-      <ul style={{ margin: 0, paddingLeft: 18, color: '#444', fontSize: 15, lineHeight: 1.7 }}>
-        {bullets.map((b) => (
-          <li key={b}>{b}</li>
-        ))}
-      </ul>
+      {children}
     </div>
   );
 }

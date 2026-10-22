@@ -5,6 +5,7 @@ import {
   usePublicRegionOverviewQuery,
 } from '../../generated/graphql';
 import {
+  compareLineages,
   isMasked,
   lifeDates,
   lineageTitle,
@@ -36,7 +37,13 @@ export function LineageDetail() {
     window.scrollTo(0, 0);
   }, [id]);
 
-  const order = overview?.lineages.items ?? [];
+  const order = useMemo(() => [...(overview?.lineages.items ?? [])].sort(compareLineages), [overview]);
+  // Spouses are attached to their partner's lineage, but they are not part of
+  // the Kent line; they show only on the partner's marriage line.
+  const line = useMemo(
+    () => (data?.lineage?.assignedPersons ?? []).filter((ap) => ap.role !== 'spouse'),
+    [data],
+  );
   const idx = order.findIndex((l) => l.id === id);
   const prev = idx > 0 ? order[idx - 1] : order[order.length - 1];
   const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : order[0];
@@ -54,7 +61,7 @@ export function LineageDetail() {
   }
 
   const badges: string[] = [];
-  badges.push(lineage.hasYDnaParticipant ? 'Confirmed' : 'Unconfirmed');
+  badges.push(lineage.hasYDnaParticipant ? 'Haplogroup Confirmed' : 'Haplogroup Unconfirmed');
   if (lineage.isNew) badges.push('NEW');
 
   return (
@@ -102,7 +109,7 @@ export function LineageDetail() {
                   fontWeight: 700,
                   letterSpacing: '0.4px',
                   textTransform: 'uppercase',
-                  background: b === 'Confirmed' ? TEAL : b === 'NEW' ? '#ffdead' : '#d5aba9',
+                  background: b === 'Haplogroup Confirmed' ? TEAL : b === 'NEW' ? '#ffdead' : '#d5aba9',
                   border: '1px solid #191919',
                 }}
               >
@@ -159,7 +166,7 @@ export function LineageDetail() {
       </div>
 
       <AncestorTree
-        assigned={lineage.assignedPersons}
+        assigned={line}
         brickWallId={lineage.brickWallAncestor?.id ?? undefined}
       />
 
@@ -173,7 +180,7 @@ export function LineageDetail() {
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {lineage.participants.map((p) => (
-            <ParticipantCard key={p.id} p={p} assigned={lineage.assignedPersons} />
+            <ParticipantCard key={p.id} p={p} assigned={line} />
           ))}
           {lineage.participants.length === 0 && (
             <div style={{ padding: 24, border: '1px dashed #cccccc', background: '#fff', color: '#555' }}>
@@ -188,8 +195,8 @@ export function LineageDetail() {
 
 /* ─── Ancestor tree ─────────────────────────────────────────────── */
 
-// Generations expanded on first render (PRD: brick wall + one below).
-const DEFAULT_EXPAND_DEPTH = 3;
+const INDENT = 26;
+const GENERATION_RULES = `repeating-linear-gradient(to right, #f5deb3 0 3px, transparent 3px ${INDENT}px, #87a4c4 ${INDENT}px ${INDENT + 3}px, transparent ${INDENT + 3}px ${INDENT * 2}px)`;
 
 interface TreeNode {
   ap: AssignedPerson;
@@ -235,28 +242,19 @@ function marriageLine(ap: AssignedPerson): string {
 function AncestorTree({ assigned, brickWallId }: { assigned: AssignedPerson[]; brickWallId?: string }) {
   const { byId, roots, reachable } = useMemo(() => buildTree(assigned), [assigned]);
 
-  // Default expand: the top DEFAULT_EXPAND_DEPTH generations.
-  const defaultExpanded = useMemo(() => {
-    const exp: Record<string, boolean> = {};
-    const open = (id: string, depth: number) => {
-      if (depth >= DEFAULT_EXPAND_DEPTH || exp[id]) return;
-      exp[id] = true;
-      byId.get(id)?.childIds.forEach((c) => open(c, depth + 1));
-    };
-    roots.forEach((r) => open(r, 0));
-    return exp;
-  }, [byId, roots]);
-
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(defaultExpanded);
-  useEffect(() => setExpanded(defaultExpanded), [defaultExpanded]);
-
-  const expandAll = () => {
+  // Every generation is open by default, brick wall down to the participant.
+  const allExpanded = useMemo(() => {
     const all: Record<string, boolean> = {};
     byId.forEach((_, k) => {
       all[k] = true;
     });
-    setExpanded(all);
-  };
+    return all;
+  }, [byId]);
+
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(allExpanded);
+  useEffect(() => setExpanded(allExpanded), [allExpanded]);
+
+  const expandAll = () => setExpanded(allExpanded);
   const collapseAll = () => setExpanded({});
 
   const rows: React.ReactNode[] = [];
@@ -285,14 +283,27 @@ function AncestorTree({ assigned, brickWallId }: { assigned: AssignedPerson[]; b
     const dates = masked ? '' : lifeDates(ap.person);
 
     rows.push(
-      <div role="treeitem" aria-expanded={hasChildren ? isOpen : undefined} key={nodeId} style={{ paddingLeft: depth * 26 }}>
+      <div
+        role="treeitem"
+        aria-expanded={hasChildren ? isOpen : undefined}
+        key={nodeId}
+        style={{
+          paddingLeft: depth * INDENT,
+          // One vertical rule per ancestor generation, alternating colours as in
+          // the original site, so branches at different depths stay readable.
+          backgroundImage: depth ? GENERATION_RULES : undefined,
+          backgroundSize: `${depth * INDENT}px 100%`,
+          backgroundPosition: '9px 0',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
         <div
           style={{
             display: 'flex',
             alignItems: 'baseline',
             gap: 8,
             padding: '5px 0',
-            borderBottom: isBrick ? '2px solid #d5aba9' : '1px solid #f2f2f2',
+            borderBottom: isBrick ? '2px solid #d5aba9' : '1px solid #e4e4e4',
           }}
         >
           {hasChildren ? (

@@ -114,12 +114,17 @@ export function lineageTitle(l: {
   return l.lineageNumber != null ? `${base}, Lineage No. ${l.lineageNumber}` : base;
 }
 
+// Older imports stored the label ("Project Member") instead of the enum value.
+function isProjectMember(m?: string | null): boolean {
+  return (m ?? '').toUpperCase().replace(/ /g, '_') === 'PROJECT_MEMBER';
+}
+
 export function membershipLabel(m?: string | null): string {
-  return (m ?? '').toUpperCase() === 'PROJECT_MEMBER' ? 'Project Member' : 'Associate Researcher';
+  return isProjectMember(m) ? 'Project Member' : 'Associate Researcher';
 }
 
 export function membershipPill(m?: string | null): string {
-  return (m ?? '').toUpperCase() === 'PROJECT_MEMBER' ? '#87c2c4' : '#f5deb3';
+  return isProjectMember(m) ? '#87c2c4' : '#f5deb3';
 }
 
 export interface PlaceLike {
@@ -147,11 +152,67 @@ export function stateAbbr(state?: string | null): string {
   return STATE_ABBR[state] ?? state;
 }
 
-/** All 12 project regions, in the design's canonical order. */
-export const ALL_REGIONS = [
-  'England', 'Massachusetts', 'Maryland', 'New Jersey', 'New York', 'Pennsylvania',
-  'North Carolina', 'Virginia', 'Georgia', 'Illinois', 'Missouri', 'Ohio',
+/** Project regions in display order, each with its states/countries in
+ * display order. The site groups lineages by this table, not by the imported
+ * `region` value, so the grouping follows the project's own region scheme. */
+export const REGIONS: { name: string; states: string[] }[] = [
+  { name: 'International', states: ['Belgium', 'Canada', 'England', 'Germany'] },
+  { name: 'New England', states: ['Connecticut', 'Maine', 'Massachusetts', 'New Hampshire', 'Rhode Island', 'Vermont'] },
+  { name: 'Mid Atlantic', states: ['Delaware', 'Maryland', 'New Jersey', 'New York', 'Pennsylvania'] },
+  { name: 'Upper South', states: ['Kentucky', 'North Carolina', 'Tennessee', 'Virginia', 'West Virginia'] },
+  {
+    name: 'South & Gulf States',
+    states: ['Alabama', 'Arkansas', 'Florida', 'Georgia', 'Louisiana', 'Mississippi', 'South Carolina', 'Texas'],
+  },
+  {
+    name: 'Midwest & Great Plains',
+    states: [
+      'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Michigan', 'Minnesota', 'Missouri', 'Nebraska',
+      'North Dakota', 'Ohio', 'Oklahoma', 'South Dakota', 'Wisconsin',
+    ],
+  },
+  {
+    name: 'Western States',
+    states: [
+      'Alaska', 'Arizona', 'California', 'Colorado', 'Hawaii', 'Idaho', 'Montana', 'Nevada',
+      'New Mexico', 'Oregon', 'Utah', 'Washington', 'Wyoming',
+    ],
+  },
 ];
+
+interface LineageSortable {
+  displayName: string;
+  originState?: string | null;
+  lineageNumber?: number | null;
+  region?: string | null;
+}
+
+/** Region name for a lineage; an unlisted state keeps its imported region. */
+export function regionOf(l: LineageSortable): string {
+  const state = l.originState ?? '';
+  return REGIONS.find((r) => r.states.includes(state))?.name ?? l.region ?? 'Other';
+}
+
+// Position of the lineage's state in REGIONS; unlisted states sort last.
+function stateRank(l: LineageSortable): number {
+  let i = 0;
+  for (const r of REGIONS) {
+    for (const s of r.states) {
+      if (s === l.originState) return i;
+      i++;
+    }
+  }
+  return i;
+}
+
+/** Order by region, then state, then lineage number. */
+export function compareLineages(a: LineageSortable, b: LineageSortable): number {
+  return (
+    stateRank(a) - stateRank(b) ||
+    (a.originState ?? a.displayName).localeCompare(b.originState ?? b.displayName) ||
+    (a.lineageNumber ?? 0) - (b.lineageNumber ?? 0)
+  );
+}
 
 interface MigrationStopLike {
   stopOrder?: number | null;

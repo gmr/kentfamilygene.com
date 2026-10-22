@@ -20,7 +20,10 @@ query PublicRegionOverview {
   lineages {
     items {
       id
+      displayName
       region
+      originState
+      lineageNumber
     }
   }
 }
