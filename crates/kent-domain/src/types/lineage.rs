@@ -66,15 +66,24 @@ impl Lineage {
         ctx: &Context<'_>,
     ) -> async_graphql::Result<Option<Person>> {
         let graph = ctx.data::<Graph>()?;
-        // find_persons_of_lineage is ordered by generation ascending.
+        // find_persons_of_lineage is ordered by generation ascending, then birth.
         let rows = kent_db::relationship::find_persons_of_lineage(graph, &self.id).await?;
-        // Skip the importer's role placeholders ("Father", "y-DNA Participant"
-        // and friends: a privacy_label with no name). They occupy the earliest
-        // generations of every chain, so taking row 0 blindly reported the
-        // brick wall as "y-DNA Participant" instead of a documented ancestor.
+        // Generation 1 is the participant, so the brick wall is the documented
+        // common ancestor, or else the highest generation. Skip spouses and the
+        // importer's role placeholders ("Father", "y-DNA Participant": a
+        // privacy_label with no name). On a tie, keep the earliest-born.
         Ok(rows
             .into_iter()
-            .find(|(p, _, _, _)| !p.given_name.trim().is_empty() || !p.surname.trim().is_empty())
+            .filter(|(p, role, _, _)| {
+                role.as_deref() != Some("spouse")
+                    && (!p.given_name.trim().is_empty() || !p.surname.trim().is_empty())
+            })
+            .min_by_key(|(_, role, generation, _)| {
+                (
+                    std::cmp::Reverse(role.as_deref() == Some("common_ancestor")),
+                    std::cmp::Reverse(generation.unwrap_or(0)),
+                )
+            })
             .map(|(p, _, _, _)| {
                 let mut person = Person::from(p);
                 privacy::mask_person_for_ctx(ctx, &mut person);
