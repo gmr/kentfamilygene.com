@@ -37,7 +37,14 @@ impl Participant {
     async fn dna_tests(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<DnaTest>> {
         let graph = ctx.data::<Graph>()?;
         let rows = kent_db::find_dna_tests_by_participant(graph, &self.id).await?;
-        Ok(rows.into_iter().map(DnaTest::from).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let mut test = DnaTest::from(r);
+                privacy::mask_dna_test_for_ctx(ctx, &mut test);
+                test
+            })
+            .collect())
     }
 
     async fn online_trees(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<OnlineTree>> {

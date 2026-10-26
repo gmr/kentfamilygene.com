@@ -124,7 +124,7 @@ fn test_mask_participant_strips_email_and_contact() {
     assert!(p.contact_note.is_none());
     // Non-PII fields preserved
     assert_eq!(p.display_name, "John Kent");
-    assert_eq!(p.ftdna_kit_number, Some("12345".into()));
+    assert!(p.ftdna_kit_number.is_none());
     assert_eq!(p.research_goal, Some("Find common ancestor".into()));
 }
 

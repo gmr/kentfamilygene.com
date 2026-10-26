@@ -500,7 +500,7 @@ function ParticipantCard({ p, assigned }: { p: ParticipantData; assigned: Assign
       'y-DNA Test',
       !!yTest,
       `${yTest?.markerCount ?? '?'} markers${yHaplo ? ` · ${yHaplo.abbreviation ?? yHaplo.name}` : ''}`,
-      [yStatus, yTest?.registeredWithProject ? 'Registered ✓' : '', yTest?.kitNumber ? `Kit ${yTest.kitNumber}` : '']
+      [yStatus, yTest?.registeredWithProject ? 'Registered ✓' : '']
         .filter(Boolean)
         .join(' · '),
       '#f7fbfb',
@@ -517,9 +517,7 @@ function ParticipantCard({ p, assigned }: { p: ParticipantData; assigned: Assign
   const chain = useMemo(() => buildChain(p, assigned), [p, assigned]);
 
   const matches = p.geneticMatches.map((m) => {
-    const who = m.participant.ftdnaKitNumber
-      ? `Kit No. ${m.participant.ftdnaKitNumber}`
-      : m.participant.displayName;
+    const who = m.participant.displayName;
     const level = m.markerLevel ? ` at ${m.markerLevel} markers` : '';
     const note = m.notes ? ` (${m.notes})` : '';
     return `Matches ${who}${level}${note}`;
@@ -546,7 +544,7 @@ function ParticipantCard({ p, assigned }: { p: ParticipantData; assigned: Assign
             </span>
           </div>
           <div style={{ fontSize: 13, color: '#555', marginTop: 5, fontFamily: mono }}>
-            {[p.joinDate ? `Joined ${p.joinDate}` : '', p.ftdnaKitNumber ? `Kit No. ${p.ftdnaKitNumber}` : 'Researcher']
+            {[p.joinDate ? `Joined ${p.joinDate}` : '', p.dnaTests.length > 0 ? '' : 'Researcher']
               .filter(Boolean)
               .join(' · ')}
           </div>

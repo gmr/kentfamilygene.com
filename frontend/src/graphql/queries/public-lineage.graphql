@@ -66,7 +66,6 @@ query PublicLineage($id: String!) {
       displayName
       membershipType
       joinDate
-      ftdnaKitNumber
       researchGoal
       linkedPerson {
         id
@@ -85,7 +84,6 @@ query PublicLineage($id: String!) {
         provider
         markerCount
         registeredWithProject
-        kitNumber
       }
       haplogroups {
         id
@@ -101,7 +99,6 @@ query PublicLineage($id: String!) {
         participant {
           id
           displayName
-          ftdnaKitNumber
         }
       }
     }

@@ -1,7 +1,7 @@
 use async_graphql::Context;
 
 use crate::auth::AuthContext;
-use crate::types::{Participant, Person};
+use crate::types::{DnaTest, Participant, Person};
 
 /// True when the request is unauthenticated (public) and personal data must be
 /// masked. Defaults to masking when no auth context is present (fail closed).
@@ -116,10 +116,19 @@ pub fn mask_persons(persons: &mut [Person]) {
     }
 }
 
-/// Strip PII (email, contact notes) from a participant for public queries.
+/// Strip PII (email, contact notes, kit number) from a participant for public queries.
 pub fn mask_participant(participant: &mut Participant) {
     participant.email = None;
     participant.contact_note = None;
+    participant.ftdna_kit_number = None;
+}
+
+/// Strip kit numbers from a DNA test only for public (unauthenticated) requests.
+pub fn mask_dna_test_for_ctx(ctx: &Context<'_>, test: &mut DnaTest) {
+    if is_public(ctx) {
+        test.kit_number = None;
+        test.gedmatch_kit = None;
+    }
 }
 
 /// Strip PII from a list of participants for public queries.
