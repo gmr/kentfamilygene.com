@@ -298,18 +298,20 @@ function AncestorTree({ assigned, brickWallId }: { assigned: AssignedPerson[]; b
         }}
       >
         <div
+          // The whole row toggles; clicks on the button bubble up to here.
+          onClick={hasChildren ? () => setExpanded((e) => ({ ...e, [nodeId]: !e[nodeId] })) : undefined}
           style={{
             display: 'flex',
             alignItems: 'baseline',
             gap: 8,
             padding: '5px 0',
             borderBottom: isBrick ? '2px solid #d5aba9' : '1px solid #e4e4e4',
+            cursor: hasChildren ? 'pointer' : undefined,
           }}
         >
           {hasChildren ? (
             <button
               type="button"
-              onClick={() => setExpanded((e) => ({ ...e, [nodeId]: !e[nodeId] }))}
               aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${personName(ap.person)}`}
               style={{ ...treeToggleStyle, cursor: 'pointer' }}
             >
