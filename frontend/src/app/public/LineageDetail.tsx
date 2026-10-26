@@ -49,11 +49,11 @@ export function LineageDetail() {
   const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : order[0];
 
   if (fetching) {
-    return <div style={{ maxWidth: 1080, margin: '0 auto', padding: 40, color: '#555' }}>Loading…</div>;
+    return <div style={{ minWidth: 0, color: '#555' }}>Loading…</div>;
   }
   if (error || !lineage) {
     return (
-      <div style={{ maxWidth: 1080, margin: '0 auto', padding: 40 }}>
+      <div style={{ minWidth: 0 }}>
         <p style={{ color: '#555' }}>Lineage not found.</p>
         <Link to="/lineages">← Back to lineages</Link>
       </div>
@@ -65,7 +65,7 @@ export function LineageDetail() {
   if (lineage.isNew) badges.push('NEW');
 
   return (
-    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '22px 22px 72px' }}>
+    <div style={{ minWidth: 0 }}>
       {/* Breadcrumb + prev/next */}
       <div
         style={{

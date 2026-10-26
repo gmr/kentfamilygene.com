@@ -22,6 +22,7 @@ const Navigation = lazy(() => import('./components/Navigation').then(m => ({ def
 
 const Home = lazy(() => import('./public/Home').then(m => ({ default: m.Home })));
 const LineageBrowser = lazy(() => import('./public/LineageBrowser').then(m => ({ default: m.LineageBrowser })));
+const LineagesLayout = lazy(() => import('./public/LineageBrowser').then(m => ({ default: m.LineagesLayout })));
 const LineageDetail = lazy(() => import('./public/LineageDetail').then(m => ({ default: m.LineageDetail })));
 const PublicSearch = lazy(() => import('./public/Search').then(m => ({ default: m.Search })));
 const PublicHaplogroups = lazy(() => import('./public/Haplogroups').then(m => ({ default: m.Haplogroups })));
@@ -34,8 +35,10 @@ export default function App() {
         {/* Public site */}
         <Route element={<PublicLayout />}>
           <Route index element={<Suspense><Home /></Suspense>} />
-          <Route path="/lineages" element={<Suspense><LineageBrowser /></Suspense>} />
-          <Route path="/lineages/:id" element={<Suspense><LineageDetail /></Suspense>} />
+          <Route path="/lineages" element={<Suspense><LineagesLayout /></Suspense>}>
+            <Route index element={<Suspense><LineageBrowser /></Suspense>} />
+            <Route path=":id" element={<Suspense><LineageDetail /></Suspense>} />
+          </Route>
           <Route path="/search" element={<Suspense><PublicSearch /></Suspense>} />
           <Route path="/haplogroups" element={<Suspense><PublicHaplogroups /></Suspense>} />
           {/* CMS-managed pages. Last, so it never shadows a built-in route. */}

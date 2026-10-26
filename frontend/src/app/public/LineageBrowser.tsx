@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Outlet, useMatch, useSearchParams } from 'react-router-dom';
 import { usePublicLineagesQuery } from '../../generated/graphql';
 import {
   REGIONS,
@@ -70,19 +70,6 @@ export function LineageBrowser() {
     });
   }, [items, region, q]);
 
-  // Region -> state -> lineages. `items` is already sorted, so insertion order
-  // is display order; only regions missing from REGIONS need placing last.
-  const byRegion = useMemo(() => {
-    const map = new Map<string, Map<string, LineageItem[]>>(REGIONS.map((r) => [r.name, new Map()]));
-    items.forEach((l) => {
-      const r = regionOf(l);
-      const states = map.get(r) ?? map.set(r, new Map()).get(r)!;
-      const state = l.originState ?? l.displayName;
-      states.set(state, [...(states.get(state) ?? []), l]);
-    });
-    return Array.from(map.entries()).filter(([, states]) => states.size > 0);
-  }, [items]);
-
   const clearRegion = () => {
     const next = new URLSearchParams(params);
     next.delete('region');
@@ -90,94 +77,7 @@ export function LineageBrowser() {
   };
 
   return (
-    <div
-      className="kent-browse-grid"
-      style={{
-        maxWidth: 1240,
-        margin: '0 auto',
-        padding: '26px 22px 64px',
-        display: 'grid',
-        gridTemplateColumns: '268px 1fr',
-        gap: 28,
-        alignItems: 'start',
-      }}
-    >
-      {/* Sidebar */}
-      <aside
-        className="kent-scroll kent-sidebar"
-        style={{
-          position: 'sticky',
-          top: 88,
-          border: '1px solid #cccccc',
-          background: '#fff',
-          maxHeight: 'calc(100vh - 110px)',
-          overflow: 'auto',
-        }}
-      >
-        <div
-          style={{
-            padding: '14px 16px',
-            borderBottom: '1px solid #cccccc',
-            fontFamily: serif,
-            fontWeight: 700,
-            fontSize: 15,
-            letterSpacing: '0.3px',
-            textTransform: 'uppercase',
-            background: '#f6f6f6',
-          }}
-        >
-          Regions
-        </div>
-        {byRegion.map(([name, states]) => (
-          <details key={name} open={name === region} style={{ borderBottom: '1px solid #eee' }}>
-            <summary
-              style={{
-                padding: '11px 16px 8px',
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: '0.8px',
-                textTransform: 'uppercase',
-                color: '#2b6c6e',
-                cursor: 'pointer',
-              }}
-            >
-              {name}{' '}
-              <span style={{ color: '#999' }}>
-                ({Array.from(states.values()).reduce((n, ls) => n + ls.length, 0)})
-              </span>
-            </summary>
-            {Array.from(states.entries()).map(([state, lineages]) => (
-              <div key={state}>
-                <div style={{ padding: '6px 16px 2px 22px', fontSize: 13.5, fontWeight: 700, color: '#333' }}>
-                  {state}
-                </div>
-                {lineages.map((l) => (
-                  <Link
-                    key={l.id}
-                    to={`/lineages/${l.id}`}
-                    className="kent-sidebar-link"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 16px 6px 32px',
-                      fontSize: 14,
-                      color: '#333',
-                      borderLeft: `3px solid ${l.hasYDnaParticipant ? TEAL : SALMON}`,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    {l.lineageNumber != null ? `Lineage No. ${l.lineageNumber}` : l.displayName}
-                  </Link>
-                ))}
-              </div>
-            ))}
-          </details>
-        ))}
-      </aside>
-
-      {/* Main */}
-      <div>
+    <div style={{ minWidth: 0 }}>
         <h1 style={{ fontFamily: serif, fontWeight: 700, fontSize: 34, margin: '0 0 6px' }}>
           Lineage browser
         </h1>
@@ -239,7 +139,123 @@ export function LineageBrowser() {
             </div>
           )}
         </div>
-      </div>
+    </div>
+  );
+}
+
+/** Shared shell for /lineages and /lineages/:id so the region sidebar stays put. */
+export function LineagesLayout() {
+  const [params] = useSearchParams();
+  const [{ data }] = usePublicLineagesQuery();
+  const currentId = useMatch('/lineages/:id')?.params.id;
+  const items = useMemo(() => [...(data?.lineages.items ?? [])].sort(compareLineages), [data]);
+  const current = items.find((l) => l.id === currentId);
+  const openRegion = params.get('region') ?? (current ? regionOf(current) : null);
+
+  // Region -> state -> lineages. `items` is already sorted, so insertion order
+  // is display order; only regions missing from REGIONS need placing last.
+  const byRegion = useMemo(() => {
+    const map = new Map<string, Map<string, LineageItem[]>>(REGIONS.map((r) => [r.name, new Map()]));
+    items.forEach((l) => {
+      const r = regionOf(l);
+      const states = map.get(r) ?? map.set(r, new Map()).get(r)!;
+      const state = l.originState ?? l.displayName;
+      states.set(state, [...(states.get(state) ?? []), l]);
+    });
+    return Array.from(map.entries()).filter(([, states]) => states.size > 0);
+  }, [items]);
+
+  return (
+    <div
+      className="kent-browse-grid"
+      style={{
+        maxWidth: 1240,
+        margin: '0 auto',
+        padding: '26px 22px 64px',
+        display: 'grid',
+        gridTemplateColumns: '268px 1fr',
+        gap: 28,
+        alignItems: 'start',
+      }}
+    >
+      {/* Sidebar */}
+      <aside
+        className="kent-scroll kent-sidebar"
+        style={{
+          position: 'sticky',
+          top: 88,
+          border: '1px solid #cccccc',
+          background: '#fff',
+          maxHeight: 'calc(100vh - 110px)',
+          overflow: 'auto',
+        }}
+      >
+        <div
+          style={{
+            padding: '14px 16px',
+            borderBottom: '1px solid #cccccc',
+            fontFamily: serif,
+            fontWeight: 700,
+            fontSize: 15,
+            letterSpacing: '0.3px',
+            textTransform: 'uppercase',
+            background: '#f6f6f6',
+          }}
+        >
+          Regions
+        </div>
+        {byRegion.map(([name, states]) => (
+          <details key={name} open={name === openRegion} style={{ borderBottom: '1px solid #eee' }}>
+            <summary
+              style={{
+                padding: '11px 16px 8px',
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.8px',
+                textTransform: 'uppercase',
+                color: '#2b6c6e',
+                cursor: 'pointer',
+              }}
+            >
+              {name}{' '}
+              <span style={{ color: '#999' }}>
+                ({Array.from(states.values()).reduce((n, ls) => n + ls.length, 0)})
+              </span>
+            </summary>
+            {Array.from(states.entries()).map(([state, lineages]) => (
+              <div key={state}>
+                <div style={{ padding: '6px 16px 2px 22px', fontSize: 13.5, fontWeight: 700, color: '#333' }}>
+                  {state}
+                </div>
+                {lineages.map((l) => (
+                  <Link
+                    key={l.id}
+                    to={`/lineages/${l.id}`}
+                    className="kent-sidebar-link"
+                    aria-current={l.id === currentId ? 'page' : undefined}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 16px 6px 32px',
+                      fontSize: 14,
+                      color: '#333',
+                      fontWeight: l.id === currentId ? 700 : undefined,
+                      background: l.id === currentId ? '#f6f6f6' : undefined,
+                      borderLeft: `3px solid ${l.hasYDnaParticipant ? TEAL : SALMON}`,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    {l.lineageNumber != null ? `Lineage No. ${l.lineageNumber}` : l.displayName}
+                  </Link>
+                ))}
+              </div>
+            ))}
+          </details>
+        ))}
+      </aside>
+
+      <Outlet />
     </div>
   );
 }
