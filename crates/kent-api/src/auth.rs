@@ -18,7 +18,9 @@ use axum::{
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
 };
+use axum_extra::headers::{Authorization, Cookie, HeaderMapExt, authorization::Bearer};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use html_escape::encode_safe;
 use rand::RngCore;
 use reqwest::Url;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -54,8 +56,25 @@ struct OAuthRequest {
     redirect_uri: String,
     code_challenge: String,
     client_state: Option<String>,
-    /// Set after Google sign-in, while the consent page waits.
-    email: Option<String>,
+}
+
+/// A Google sign-in in progress, keyed by the `state` sent to Google.
+#[derive(Serialize, Deserialize)]
+enum Pending {
+    Login,
+    Mcp(OAuthRequest),
+}
+
+/// An MCP request after sign-in, waiting on the consent page.
+#[derive(Serialize, Deserialize)]
+struct Consent {
+    req: OAuthRequest,
+    email: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Session {
+    email: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -142,19 +161,11 @@ pub async fn rate_limit(State(st): State<AppState>, req: Request, next: Next) ->
     next.run(req).await
 }
 
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
-
 fn page(status: StatusCode, msg: &str) -> Response {
     let body = format!(
         "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Sign in</title>\
          <body style='font:16px system-ui;max-width:36em;margin:3em auto;padding:0 16px'><h1>Kent Family &amp; DNA Project</h1><p>{}</p>",
-        esc(msg)
+        encode_safe(msg)
     );
     (status, Html(body)).into_response()
 }
@@ -165,24 +176,30 @@ fn allowed(st: &AppState, email: &str) -> bool {
 
 // ── Google ────────────────────────────────────────────────────────
 
-fn google_redirect(st: &AppState, state: &str) -> Response {
+fn callback_url(st: &AppState) -> String {
+    format!("{}/oauth/google/callback", st.base_url)
+}
+
+/// Saves the sign-in in progress under a random `state` and sends the browser to Google.
+async fn start_google(st: &AppState, pending: Pending) -> Response {
     let Some(g) = &st.google else {
         return page(
             StatusCode::SERVICE_UNAVAILABLE,
             "Sign-in is not configured on this server.",
         );
     };
+    let state = random_token();
+    if !save(st, &hash(&state), "pending", &pending, PENDING_TTL).await {
+        return unavailable();
+    }
     let url = Url::parse_with_params(
         GOOGLE_AUTH,
         &[
             ("client_id", g.client_id.as_str()),
-            (
-                "redirect_uri",
-                &format!("{}/oauth/google/callback", st.base_url),
-            ),
+            ("redirect_uri", &callback_url(st)),
             ("response_type", "code"),
             ("scope", "openid email"),
-            ("state", state),
+            ("state", &state),
             ("prompt", "select_account"),
         ],
     )
@@ -197,47 +214,38 @@ pub struct GoogleCallback {
     error: Option<String>,
 }
 
-/// Shared by both flows: the `state` is either an admin login or a pending MCP request.
+/// Shared by both flows: the `state` names an admin login or an MCP request.
 pub async fn google_callback(
     State(st): State<AppState>,
     Query(q): Query<GoogleCallback>,
 ) -> Response {
-    let key = hash(&q.state);
-    if take::<Value>(&st, &key, "login").await.is_some() {
-        let email = match (q.code, q.error) {
-            (Some(code), None) => google_email(&st, &code).await,
-            _ => return Redirect::to("/admin/login?error=cancelled").into_response(),
-        };
-        return match email {
-            Ok(email) => start_session(&st, &email).await,
-            Err(e) => {
-                tracing::warn!("Google sign-in failed: {e}");
-                Redirect::to("/admin/login?error=google").into_response()
-            }
-        };
-    }
-    let Some(req) = take::<OAuthRequest>(&st, &key, "request")
-        .await
-        .filter(|r| r.email.is_none())
-    else {
+    let Some(pending) = take::<Pending>(&st, &hash(&q.state), "pending").await else {
         return page(
             StatusCode::BAD_REQUEST,
             "This sign-in link has expired. Start again.",
         );
     };
-    let (Some(code), None) = (q.code, q.error) else {
-        return redirect_error(
-            &req.redirect_uri,
-            "access_denied",
-            req.client_state.as_deref(),
-        );
-    };
-    match google_email(&st, &code).await {
-        Ok(email) => consent(&st, req, &email).await,
-        Err(e) => {
+    let email = match (q.code, q.error) {
+        (Some(code), None) => Some(google_email(&st, &code).await.map_err(|e| {
             tracing::warn!("Google sign-in failed: {e}");
+        })),
+        _ => None,
+    };
+    match (pending, email) {
+        (Pending::Login, Some(Ok(email))) => start_session(&st, &email).await,
+        (Pending::Login, Some(Err(()))) => {
+            Redirect::to("/admin/login?error=google").into_response()
+        }
+        (Pending::Login, None) => Redirect::to("/admin/login?error=cancelled").into_response(),
+        (Pending::Mcp(req), Some(Ok(email))) => consent(&st, req, &email).await,
+        (Pending::Mcp(_), Some(Err(()))) => {
             page(StatusCode::BAD_GATEWAY, "Google sign-in failed. Try again.")
         }
+        (Pending::Mcp(req), None) => redirect_with(
+            &req.redirect_uri,
+            ("error", "access_denied"),
+            req.client_state.as_deref(),
+        ),
     }
 }
 
@@ -253,10 +261,7 @@ async fn google_email(
             ("code", code),
             ("client_id", &g.client_id),
             ("client_secret", &g.client_secret),
-            (
-                "redirect_uri",
-                &format!("{}/oauth/google/callback", st.base_url),
-            ),
+            ("redirect_uri", &callback_url(st)),
             ("grant_type", "authorization_code"),
         ])
         .send()
@@ -292,11 +297,7 @@ pub async fn login(State(st): State<AppState>) -> Response {
     if let Some(email) = st.dev_login_email.clone() {
         return start_session(&st, &email).await;
     }
-    let state = random_token();
-    if !save(&st, &hash(&state), "login", &json!({}), PENDING_TTL).await {
-        return unavailable();
-    }
-    google_redirect(&st, &state)
+    start_google(&st, Pending::Login).await
 }
 
 async fn start_session(st: &AppState, email: &str) -> Response {
@@ -305,15 +306,10 @@ async fn start_session(st: &AppState, email: &str) -> Response {
         return Redirect::to("/admin/login?error=forbidden").into_response();
     }
     let token = random_token();
-    if !save(
-        st,
-        &hash(&token),
-        "session",
-        &json!({"email": email}),
-        SESSION_TTL,
-    )
-    .await
-    {
+    let session = Session {
+        email: email.to_string(),
+    };
+    if !save(st, &hash(&token), "session", &session, SESSION_TTL).await {
         return unavailable();
     }
     tracing::info!(email, "admin signed in");
@@ -332,21 +328,18 @@ async fn start_session(st: &AppState, email: &str) -> Response {
         .into_response()
 }
 
-fn session_cookie(headers: &HeaderMap) -> Option<&str> {
+fn session_cookie(headers: &HeaderMap) -> Option<String> {
     headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(';'))
-        .find_map(|c| c.trim().strip_prefix(&format!("{SESSION_COOKIE}=")))
+        .typed_get::<Cookie>()?
+        .get(SESSION_COOKIE)
+        .map(str::to_string)
 }
 
 /// The email of a valid admin session, if any.
 pub async fn session_email(st: &AppState, headers: &HeaderMap) -> Option<String> {
     let token = session_cookie(headers)?;
-    let v: Value = get(st, &hash(token), "session").await?;
-    let email = v["email"].as_str()?.to_string();
-    allowed(st, &email).then_some(email)
+    let s: Session = get(st, &hash(&token), "session").await?;
+    allowed(st, &s.email).then_some(s.email)
 }
 
 /// GET /auth/me: who is signed in to the admin UI.
@@ -360,7 +353,7 @@ pub async fn me(State(st): State<AppState>, headers: HeaderMap) -> Response {
 /// POST /auth/logout
 pub async fn logout(State(st): State<AppState>, headers: HeaderMap) -> Response {
     if let Some(token) = session_cookie(&headers) {
-        take::<Value>(&st, &hash(token), "session").await;
+        take::<Session>(&st, &hash(&token), "session").await;
     }
     (
         [(
@@ -474,29 +467,29 @@ pub async fn authorize(State(st): State<AppState>, Query(q): Query<AuthorizeReq>
     }
     if q.response_type != "code" || q.code_challenge_method != "S256" || q.code_challenge.len() < 43
     {
-        return redirect_error(&q.redirect_uri, "invalid_request", q.state.as_deref());
+        return redirect_with(
+            &q.redirect_uri,
+            ("error", "invalid_request"),
+            q.state.as_deref(),
+        );
     }
     let req = OAuthRequest {
         client_id: q.client_id,
         redirect_uri: q.redirect_uri,
         code_challenge: q.code_challenge,
         client_state: q.state,
-        email: None,
     };
     // Local development only (refused at start-up unless the base URL is localhost).
     if let Some(email) = st.dev_login_email.clone() {
         return consent(&st, req, &email).await;
     }
-    let rid = random_token();
-    if !save(&st, &hash(&rid), "request", &req, PENDING_TTL).await {
-        return unavailable();
-    }
-    google_redirect(&st, &rid)
+    start_google(&st, Pending::Mcp(req)).await
 }
 
-fn redirect_error(redirect_uri: &str, error: &str, state: Option<&str>) -> Response {
+/// Redirects to a registered client URI with one result pair and the client's state.
+fn redirect_with(redirect_uri: &str, (key, value): (&str, &str), state: Option<&str>) -> Response {
     let mut u = Url::parse(redirect_uri).expect("registered uri parses");
-    u.query_pairs_mut().append_pair("error", error);
+    u.query_pairs_mut().append_pair(key, value);
     if let Some(s) = state {
         u.query_pairs_mut().append_pair("state", s);
     }
@@ -506,7 +499,7 @@ fn redirect_error(redirect_uri: &str, error: &str, state: Option<&str>) -> Respo
 /// After sign-in, asks the administrator to approve this client by name and return address,
 /// so a link from someone else's registered client cannot silently mint tokens. The form's
 /// one-time id (stored hashed, 10 minutes) is the CSRF token.
-async fn consent(st: &AppState, mut req: OAuthRequest, email: &str) -> Response {
+async fn consent(st: &AppState, req: OAuthRequest, email: &str) -> Response {
     if !allowed(st, email) {
         tracing::warn!(email, "MCP sign-in refused: not in ADMIN_EMAILS");
         return page(
@@ -523,9 +516,12 @@ async fn consent(st: &AppState, mut req: OAuthRequest, email: &str) -> Response 
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
         .unwrap_or_default();
-    req.email = Some(email.to_string());
     let id = random_token();
-    if !save(st, &hash(&id), "request", &req, PENDING_TTL).await {
+    let pending = Consent {
+        req,
+        email: email.to_string(),
+    };
+    if !save(st, &hash(&id), "consent", &pending, PENDING_TTL).await {
         return unavailable();
     }
     let body = format!(
@@ -538,9 +534,9 @@ async fn consent(st: &AppState, mut req: OAuthRequest, email: &str) -> Response 
          <form method=post action='/authorize/consent'><input type=hidden name=id value='{id}'>\
          <button name=decision value=allow style='font:600 15px system-ui;padding:10px 18px;border:0;border-radius:8px;background:#0f766e;color:#fff'>Allow</button> \
          <button name=decision value=deny style='font:600 15px system-ui;padding:10px 18px;border:1px solid #cbd5e1;border-radius:8px;background:#fff'>Deny</button></form>",
-        email = esc(email),
-        name = esc(&name),
-        dest = esc(&dest),
+        email = encode_safe(email),
+        name = encode_safe(&name),
+        dest = encode_safe(&dest),
     );
     let mut r = Html(body).into_response();
     r.headers_mut().insert(
@@ -560,22 +556,16 @@ pub struct ConsentForm {
 
 /// Issues the authorization code after the administrator approves.
 pub async fn consent_post(State(st): State<AppState>, Form(f): Form<ConsentForm>) -> Response {
-    let Some(req) = take::<OAuthRequest>(&st, &hash(&f.id), "request").await else {
+    let Some(Consent { req, email }) = take(&st, &hash(&f.id), "consent").await else {
         return page(
             StatusCode::BAD_REQUEST,
             "This approval has expired. Start again from Claude.",
         );
     };
-    let Some(email) = req.email else {
-        return page(
-            StatusCode::BAD_REQUEST,
-            "This approval is not valid. Start again from Claude.",
-        );
-    };
     if f.decision != "allow" {
-        return redirect_error(
+        return redirect_with(
             &req.redirect_uri,
-            "access_denied",
+            ("error", "access_denied"),
             req.client_state.as_deref(),
         );
     }
@@ -590,12 +580,11 @@ pub async fn consent_post(State(st): State<AppState>, Form(f): Form<ConsentForm>
         return unavailable();
     }
     tracing::info!(email, client = %req.client_id, "MCP access approved");
-    let mut u = Url::parse(&req.redirect_uri).expect("registered uri parses");
-    u.query_pairs_mut().append_pair("code", &code);
-    if let Some(s) = &req.client_state {
-        u.query_pairs_mut().append_pair("state", s);
-    }
-    Redirect::to(u.as_str()).into_response()
+    redirect_with(
+        &req.redirect_uri,
+        ("code", &code),
+        req.client_state.as_deref(),
+    )
 }
 
 #[derive(Deserialize)]
@@ -695,10 +684,8 @@ pub async fn token(State(st): State<AppState>, Form(t): Form<TokenReq>) -> Respo
 pub async fn require_bearer(State(st): State<AppState>, mut req: Request, next: Next) -> Response {
     let token = req
         .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string);
+        .typed_get::<Authorization<Bearer>>()
+        .map(|a| a.token().to_string());
     let email = match token {
         // Removing an email from ADMIN_EMAILS (and restarting) ends its access at once.
         Some(t) => get::<Token>(&st, &hash(&t), "access")
@@ -744,16 +731,5 @@ mod tests {
             URL_SAFE_NO_PAD.encode(Sha256::digest(v.as_bytes())),
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
-    }
-
-    #[test]
-    fn reads_session_cookie() {
-        let mut h = HeaderMap::new();
-        h.insert(
-            header::COOKIE,
-            HeaderValue::from_static("a=1; kent_session=abc; b=2"),
-        );
-        assert_eq!(session_cookie(&h), Some("abc"));
-        assert_eq!(session_cookie(&HeaderMap::new()), None);
     }
 }

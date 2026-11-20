@@ -203,11 +203,7 @@ async fn run_server() {
         .expect("Failed to create OAuth constraints");
 
     let schema = kent_domain::build_schema(graph.clone());
-    let state = auth_state(schema, graph, port).expect("Invalid sign-in configuration");
-    let host = reqwest::Url::parse(&state.base_url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .expect("BASE_URL has no host");
+    let (state, host) = auth_state(schema, graph, port).expect("Invalid sign-in configuration");
 
     let mcp_schema = state.schema.clone();
     let mcp_service: StreamableHttpService<mcp::Mcp, LocalSessionManager> =
@@ -268,6 +264,7 @@ async fn run_server() {
                 .service(mcp_service),
         )
         .fallback_service(spa_service)
+        // Must never allow credentials: the CSRF check in graphql_handler relies on it.
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -329,11 +326,12 @@ async fn health_check() -> impl IntoResponse {
 }
 
 /// Reads BASE_URL, GOOGLE_CLIENT_ID/SECRET, ADMIN_EMAILS and DEV_LOGIN_EMAIL.
+/// Returns the state and the BASE_URL host.
 fn auth_state(
     schema: KentSchema,
     graph: kent_db::Neo4jGraph,
     port: u16,
-) -> Result<AppState, String> {
+) -> Result<(AppState, String), String> {
     let base_url = std::env::var("BASE_URL")
         .unwrap_or_else(|_| format!("http://localhost:{port}"))
         .trim_end_matches('/')
@@ -374,7 +372,7 @@ fn auth_state(
     if google.is_none() && dev_login_email.is_none() {
         tracing::warn!("GOOGLE_CLIENT_ID/SECRET not set: nobody can sign in");
     }
-    Ok(AppState {
+    let state = AppState {
         schema,
         graph,
         base_url,
@@ -386,7 +384,8 @@ fn auth_state(
             .build()
             .map_err(|e| e.to_string())?,
         auth_window: Arc::new(Mutex::new((Instant::now(), 0))),
-    })
+    };
+    Ok((state, host))
 }
 
 fn parse_emails(s: &str) -> HashSet<String> {

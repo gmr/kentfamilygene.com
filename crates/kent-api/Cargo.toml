@@ -29,5 +29,3 @@ rmcp = { version = "3.11", features = ["server", "macros", "transport-streamable
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
 rand = "0.9"
-schemars = "1"
-http = "1"

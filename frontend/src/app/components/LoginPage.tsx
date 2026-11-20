@@ -10,11 +10,11 @@ const ERRORS: Record<string, string> = {
 };
 
 export function LoginPage() {
-  const { isAuthenticated } = useAuth();
+  const { email } = useAuth();
   const [params] = useSearchParams();
   const error = params.get('error');
 
-  if (isAuthenticated) {
+  if (email) {
     return <Navigate to="/admin/dashboard" replace />;
   }
 

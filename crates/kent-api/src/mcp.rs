@@ -3,7 +3,7 @@
 //! without changes here.
 
 use async_graphql::parser::types::OperationType;
-use http::request::Parts;
+use axum::http::request::Parts;
 use kent_domain::{AuthContext, KentSchema};
 use rmcp::{
     ErrorData, ServerHandler,

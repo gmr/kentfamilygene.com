@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 interface AuthContextValue {
   /** undefined while the session check runs. */
   email: string | null | undefined;
-  isAuthenticated: boolean;
   logout: () => Promise<void>;
 }
 
@@ -27,7 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ email, isAuthenticated: !!email, logout }}>
+    <AuthContext.Provider value={{ email, logout }}>
       {children}
     </AuthContext.Provider>
   );
