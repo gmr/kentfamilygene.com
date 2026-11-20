@@ -91,7 +91,9 @@ impl Mcp {
     }
 
     #[tool(
-        description = "Run a GraphQL query (read only) as an administrator. Living persons are not masked.",
+        description = "Run a GraphQL query (read only) as an administrator. Public fields such as person \
+        and persons mask living persons. For unmasked data, use adminPerson, adminPersons, \
+        adminParticipant and adminParticipants.",
         annotations(read_only_hint = true)
     )]
     async fn query(&self, Parameters(r): Parameters<GraphqlReq>) -> R {
@@ -120,7 +122,7 @@ impl ServerHandler for Mcp {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "Administration of the Kent Family & DNA Project genealogy database (kentfamilygene.com). \
              Call graphql_schema first, then use query to read and mutate to change data. Entity ids are \
-             UUID strings. List results use the { items total hasMore } shape. Changes are live on the \
+             UUID strings. Paginated list fields use the { items total hasMore } shape; for other results, read the SDL. Changes are live on the \
              public site at once. Never guess kinship or identity; change only what the user asks. Ask \
              before any delete.",
         )

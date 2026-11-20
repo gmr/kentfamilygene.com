@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, UserCircle, Dna, MapPin, StickyNote, FileText, 
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { cn } from './ui/utils';
+import { toast } from 'sonner';
 import { useAuth } from '../../lib/auth';
 import { useStatsQuery } from '../../generated/graphql';
 
@@ -28,7 +29,12 @@ export function AdminLayout() {
   const stats = statsData?.stats;
 
   const handleLogout = async () => {
-    await logout();
+    try {
+      await logout();
+    } catch {
+      toast.error('Sign-out failed. Try again.');
+      return;
+    }
     navigate('/admin/login', { replace: true });
   };
 

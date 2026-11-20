@@ -19,6 +19,14 @@ pub async fn ensure_oauth_constraints(graph: &Graph) -> Result<(), Error> {
                 .to_string(),
         ))
         .await?;
+    // Lets the expired-grant sweep in save_grant read only expired rows.
+    graph
+        .run(Query::new(
+            "CREATE INDEX oauthGrantExpiresAt IF NOT EXISTS \
+             FOR (g:OAuthGrant) ON (g.expiresAt)"
+                .to_string(),
+        ))
+        .await?;
     Ok(())
 }
 

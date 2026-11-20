@@ -204,6 +204,7 @@ async fn run_server() {
 
     let schema = kent_domain::build_schema(graph.clone());
     let (state, host) = auth_state(schema, graph, port).expect("Invalid sign-in configuration");
+    let dev_login = state.dev_login_email.is_some();
 
     let mcp_schema = state.schema.clone();
     let mcp_service: StreamableHttpService<mcp::Mcp, LocalSessionManager> =
@@ -269,7 +270,13 @@ async fn run_server() {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    // DEV_LOGIN_EMAIL signs in anyone who reaches the server, so then listen on loopback only.
+    let ip = if dev_login {
+        [127, 0, 0, 1]
+    } else {
+        [0, 0, 0, 0]
+    };
+    let addr = SocketAddr::from((ip, port));
     tracing::info!("Listening on http://{addr}");
     tracing::info!("GraphQL Playground at http://{addr}/graphql");
 
@@ -332,15 +339,8 @@ fn auth_state(
     graph: kent_db::Neo4jGraph,
     port: u16,
 ) -> Result<(AppState, String), String> {
-    let base_url = std::env::var("BASE_URL")
-        .unwrap_or_else(|_| format!("http://localhost:{port}"))
-        .trim_end_matches('/')
-        .to_string();
-    let host = reqwest::Url::parse(&base_url)
-        .map_err(|e| format!("BASE_URL: {e}"))?
-        .host_str()
-        .ok_or("BASE_URL has no host")?
-        .to_string();
+    let raw = std::env::var("BASE_URL").unwrap_or_else(|_| format!("http://localhost:{port}"));
+    let (base_url, host) = parse_origin(&raw).map_err(|e| format!("BASE_URL: {e}"))?;
     let dev_login_email = std::env::var("DEV_LOGIN_EMAIL")
         .ok()
         .filter(|s| !s.is_empty());
@@ -388,6 +388,25 @@ fn auth_state(
     Ok((state, host))
 }
 
+/// BASE_URL must be an http(s) origin only: the OAuth and Google callback paths are
+/// added to it. Returns the canonical origin and its host.
+fn parse_origin(s: &str) -> Result<(String, String), String> {
+    let u = reqwest::Url::parse(s).map_err(|e| e.to_string())?;
+    if !matches!(u.scheme(), "http" | "https")
+        || !u.username().is_empty()
+        || u.password().is_some()
+        || u.path() != "/"
+        || u.query().is_some()
+        || u.fragment().is_some()
+    {
+        return Err(format!(
+            "{s} must be an http(s) origin with no path, such as https://example.com"
+        ));
+    }
+    let host = u.host_str().ok_or("no host")?.to_string();
+    Ok((u.origin().ascii_serialization(), host))
+}
+
 fn parse_emails(s: &str) -> HashSet<String> {
     s.split(',')
         .map(|e| e.trim().to_lowercase())
@@ -402,5 +421,22 @@ mod tests {
         let e = super::parse_emails(" A@Example.com, ,b@example.com,nope");
         assert_eq!(e.len(), 2);
         assert!(e.contains("a@example.com") && e.contains("b@example.com"));
+    }
+
+    #[test]
+    fn base_url_must_be_an_origin() {
+        let ok = |s| super::parse_origin(s).map(|(o, _)| o);
+        assert_eq!(
+            ok("https://kentfamilygene.com/"),
+            Ok("https://kentfamilygene.com".into())
+        );
+        assert_eq!(
+            ok("http://localhost:8080"),
+            Ok("http://localhost:8080".into())
+        );
+        assert!(ok("https://kentfamilygene.com/admin").is_err());
+        assert!(ok("https://u:p@kentfamilygene.com").is_err());
+        assert!(ok("https://kentfamilygene.com/?a=1").is_err());
+        assert!(ok("ftp://kentfamilygene.com").is_err());
     }
 }

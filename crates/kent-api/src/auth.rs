@@ -350,10 +350,14 @@ pub async fn me(State(st): State<AppState>, headers: HeaderMap) -> Response {
     }
 }
 
-/// POST /auth/logout
+/// POST /auth/logout. If the session cannot be deleted, keep the cookie and return 503,
+/// so the client does not show a sign-out that did not occur.
 pub async fn logout(State(st): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(token) = session_cookie(&headers) {
-        take::<Session>(&st, &hash(&token), "session").await;
+    if let Some(token) = session_cookie(&headers)
+        && let Err(e) = kent_db::oauth::take_grant(&st.graph, &hash(&token), "session").await
+    {
+        tracing::error!("delete session: {e}");
+        return unavailable();
     }
     (
         [(
@@ -450,10 +454,16 @@ pub struct AuthorizeReq {
     response_type: String,
     client_id: String,
     redirect_uri: String,
-    code_challenge: String,
+    // Optional here, so that a missing value goes back to the client as invalid_request.
+    code_challenge: Option<String>,
     #[serde(default)]
     code_challenge_method: String,
     state: Option<String>,
+}
+
+/// An S256 challenge is the unpadded base64url of a 32-byte SHA-256 digest (43 characters).
+fn challenge_ok(c: &str) -> bool {
+    URL_SAFE_NO_PAD.decode(c).is_ok_and(|b| b.len() == 32)
 }
 
 pub async fn authorize(State(st): State<AppState>, Query(q): Query<AuthorizeReq>) -> Response {
@@ -465,18 +475,26 @@ pub async fn authorize(State(st): State<AppState>, Query(q): Query<AuthorizeReq>
             "Unknown client or redirect address. Remove the connector and add it again.",
         );
     }
-    if q.response_type != "code" || q.code_challenge_method != "S256" || q.code_challenge.len() < 43
-    {
-        return redirect_with(
-            &q.redirect_uri,
-            ("error", "invalid_request"),
-            q.state.as_deref(),
-        );
-    }
+    let code_challenge = match q.code_challenge {
+        Some(c)
+            if q.response_type == "code"
+                && q.code_challenge_method == "S256"
+                && challenge_ok(&c) =>
+        {
+            c
+        }
+        _ => {
+            return redirect_with(
+                &q.redirect_uri,
+                ("error", "invalid_request"),
+                q.state.as_deref(),
+            );
+        }
+    };
     let req = OAuthRequest {
         client_id: q.client_id,
         redirect_uri: q.redirect_uri,
-        code_challenge: q.code_challenge,
+        code_challenge,
         client_state: q.state,
     };
     // Local development only (refused at start-up unless the base URL is localhost).
@@ -502,9 +520,10 @@ fn redirect_with(redirect_uri: &str, (key, value): (&str, &str), state: Option<&
 async fn consent(st: &AppState, req: OAuthRequest, email: &str) -> Response {
     if !allowed(st, email) {
         tracing::warn!(email, "MCP sign-in refused: not in ADMIN_EMAILS");
-        return page(
-            StatusCode::FORBIDDEN,
-            &format!("{email} is not on the list of administrators for this site."),
+        return redirect_with(
+            &req.redirect_uri,
+            ("error", "access_denied"),
+            req.client_state.as_deref(),
         );
     }
     let name = get::<Client>(st, &req.client_id, "client")
@@ -597,8 +616,11 @@ pub struct TokenReq {
     refresh_token: Option<String>,
 }
 
+/// Checks the code or refresh token, writes the new tokens, and only then consumes the old
+/// grant. A storage failure before the consume leaves the old grant live, so the client can
+/// try again; a wrong client or PKCE value does not consume it.
 pub async fn token(State(st): State<AppState>, Form(t): Form<TokenReq>) -> Response {
-    let grant = match t.grant_type.as_str() {
+    let (grant, used) = match t.grant_type.as_str() {
         "authorization_code" => {
             let (Some(code), Some(verifier)) = (t.code, t.code_verifier) else {
                 return oauth_error(
@@ -607,7 +629,7 @@ pub async fn token(State(st): State<AppState>, Form(t): Form<TokenReq>) -> Respo
                     "code and code_verifier are required",
                 );
             };
-            let Some(row) = take::<Code>(&st, &hash(&code), "code").await else {
+            let Some(row) = get::<Code>(&st, &hash(&code), "code").await else {
                 return oauth_error(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -627,10 +649,11 @@ pub async fn token(State(st): State<AppState>, Form(t): Form<TokenReq>) -> Respo
                     "PKCE, client or redirect mismatch",
                 );
             }
-            Token {
+            let grant = Token {
                 client_id: row.client_id,
                 email: row.email,
-            }
+            };
+            (grant, (hash(&code), "code"))
         }
         "refresh_token" => {
             let Some(rt) = t.refresh_token else {
@@ -641,8 +664,10 @@ pub async fn token(State(st): State<AppState>, Form(t): Form<TokenReq>) -> Respo
                 );
             };
             // Only the client the token was issued to can use (and so consume) it.
-            match take::<Token>(&st, &hash(&rt), "refresh").await {
-                Some(found) if t.client_id.as_deref() == Some(found.client_id.as_str()) => found,
+            match get::<Token>(&st, &hash(&rt), "refresh").await {
+                Some(found) if t.client_id.as_deref() == Some(found.client_id.as_str()) => {
+                    (found, (hash(&rt), "refresh"))
+                }
                 _ => {
                     return oauth_error(
                         StatusCode::BAD_REQUEST,
@@ -672,6 +697,22 @@ pub async fn token(State(st): State<AppState>, Form(t): Form<TokenReq>) -> Respo
         || !save(&st, &hash(&refresh), "refresh", &grant, REFRESH_TTL).await
     {
         return unavailable();
+    }
+    // Single use: if a concurrent request consumed the grant first, refuse this one.
+    // The tokens written above are then never returned and expire unused.
+    match kent_db::oauth::take_grant(&st.graph, &used.0, used.1).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "code or refresh token already used",
+            );
+        }
+        Err(e) => {
+            tracing::error!("consume {} grant: {e}", used.1);
+            return unavailable();
+        }
     }
     (
         [(header::CACHE_CONTROL, "no-store")],
@@ -731,5 +772,10 @@ mod tests {
             URL_SAFE_NO_PAD.encode(Sha256::digest(v.as_bytes())),
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
+        assert!(challenge_ok("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
+        assert!(!challenge_ok(
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cMA"
+        ));
+        assert!(!challenge_ok("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-c="));
     }
 }

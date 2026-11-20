@@ -21,7 +21,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await fetch('/auth/logout', { method: 'POST' });
+    const res = await fetch('/auth/logout', { method: 'POST' });
+    if (!res.ok) {
+      throw new Error(`Sign-out failed (HTTP ${res.status})`);
+    }
     setEmail(null);
   }, []);
 
