@@ -290,7 +290,14 @@ async fn graphql_handler(
 ) -> GraphQLResponse {
     let mut req = req.into_inner();
 
-    let is_authenticated = auth::session_email(&state, &headers).await.is_some();
+    // Only a JSON request can carry the session: an HTML form cannot send
+    // application/json, and a cross-origin fetch with it needs a CORS preflight
+    // that does not allow credentials. With SameSite=Lax, this blocks CSRF.
+    let is_json = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/json"));
+    let is_authenticated = is_json && auth::session_email(&state, &headers).await.is_some();
     req = req.data(AuthContext { is_authenticated });
 
     state.schema.execute(req).await.into()
