@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Instant};
 
 use async_graphql::http::GraphiQLSource;
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
@@ -6,18 +6,24 @@ use axum::{
     Router,
     extract::State,
     http::{HeaderMap, StatusCode},
+    middleware,
     response::{Html, IntoResponse},
-    routing::get,
+    routing::{get, post},
 };
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use clap::{Parser, Subcommand};
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+};
+use tokio::sync::Mutex;
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use kent_domain::{AuthContext, KentSchema};
 
+mod auth;
 mod html_import;
 mod import;
+mod mcp;
 
 #[derive(Parser)]
 #[command(name = "kent-api", about = "Kent Family & DNA Project API server")]
@@ -48,10 +54,24 @@ enum Commands {
 }
 
 #[derive(Clone)]
-struct AppState {
-    schema: KentSchema,
-    admin_username: String,
-    admin_password: String,
+pub struct Google {
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub schema: KentSchema,
+    pub graph: kent_db::Neo4jGraph,
+    /// Public origin, no trailing slash, e.g. https://kentfamilygene.com
+    pub base_url: String,
+    pub google: Option<Google>,
+    /// Development only: sign every login in as this email, without Google.
+    pub dev_login_email: Option<String>,
+    /// Lower-case emails allowed to sign in to the admin UI and MCP (ADMIN_EMAILS, comma-separated).
+    pub admin_emails: Arc<HashSet<String>>,
+    pub http: reqwest::Client,
+    pub auth_window: Arc<Mutex<(Instant, u32)>>,
 }
 
 #[tokio::main]
@@ -155,8 +175,6 @@ async fn run_server() {
     let neo4j_uri = std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".into());
     let neo4j_user = std::env::var("NEO4J_USER").unwrap_or_else(|_| "neo4j".into());
     let neo4j_password = std::env::var("NEO4J_PASSWORD").expect("NEO4J_PASSWORD must be set");
-    let admin_username = std::env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into());
-    let admin_password = std::env::var("ADMIN_PASSWORD").expect("ADMIN_PASSWORD must be set");
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -180,13 +198,37 @@ async fn run_server() {
         .await
         .expect("Failed to create CMS content constraints");
 
-    let schema = kent_domain::build_schema(graph);
+    kent_db::oauth::ensure_oauth_constraints(&graph)
+        .await
+        .expect("Failed to create OAuth constraints");
 
-    let state = AppState {
-        schema,
-        admin_username,
-        admin_password,
-    };
+    let schema = kent_domain::build_schema(graph.clone());
+    let state = auth_state(schema, graph, port).expect("Invalid sign-in configuration");
+    let host = reqwest::Url::parse(&state.base_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .expect("BASE_URL has no host");
+
+    let mcp_schema = state.schema.clone();
+    let mcp_service: StreamableHttpService<mcp::Mcp, LocalSessionManager> =
+        StreamableHttpService::new(
+            move || Ok(mcp::Mcp::new(mcp_schema.clone())),
+            Default::default(),
+            StreamableHttpServerConfig::default()
+                .with_allowed_hosts([host.clone(), format!("{host}:{port}")]),
+        );
+
+    let sign_in = Router::new()
+        .route("/auth/login", get(auth::login))
+        .route("/register", post(auth::register))
+        .route("/authorize", get(auth::authorize))
+        .route("/authorize/consent", post(auth::consent_post))
+        .route("/token", post(auth::token))
+        .route("/oauth/google/callback", get(auth::google_callback))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::rate_limit,
+        ));
 
     // SPA fallback: serve static files, fall back to index.html for client-side
     // routing. `not_found_service(ServeFile)` returns index.html with a 404
@@ -201,6 +243,30 @@ async fn run_server() {
     let app = Router::new()
         .route("/graphql", get(graphql_playground).post(graphql_handler))
         .route("/health", get(health_check))
+        .route("/auth/me", get(auth::me))
+        .route("/auth/logout", post(auth::logout))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(auth::protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(auth::protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(auth::authorization_server),
+        )
+        .merge(sign_in)
+        .nest_service(
+            "/mcp",
+            tower::ServiceBuilder::new()
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    auth::require_bearer,
+                ))
+                .service(mcp_service),
+        )
         .fallback_service(spa_service)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -224,8 +290,7 @@ async fn graphql_handler(
 ) -> GraphQLResponse {
     let mut req = req.into_inner();
 
-    // Extract Basic Auth credentials and pass authentication status to resolvers
-    let is_authenticated = check_basic_auth(&headers, &state.admin_username, &state.admin_password);
+    let is_authenticated = auth::session_email(&state, &headers).await.is_some();
     req = req.data(AuthContext { is_authenticated });
 
     state.schema.execute(req).await.into()
@@ -256,46 +321,80 @@ async fn health_check() -> impl IntoResponse {
     StatusCode::OK
 }
 
-/// Decode and verify Basic Auth credentials.
-fn check_basic_auth(headers: &HeaderMap, expected_user: &str, expected_pass: &str) -> bool {
-    let Some(auth_header) = headers.get("authorization") else {
-        return false;
+/// Reads BASE_URL, GOOGLE_CLIENT_ID/SECRET, ADMIN_EMAILS and DEV_LOGIN_EMAIL.
+fn auth_state(
+    schema: KentSchema,
+    graph: kent_db::Neo4jGraph,
+    port: u16,
+) -> Result<AppState, String> {
+    let base_url = std::env::var("BASE_URL")
+        .unwrap_or_else(|_| format!("http://localhost:{port}"))
+        .trim_end_matches('/')
+        .to_string();
+    let host = reqwest::Url::parse(&base_url)
+        .map_err(|e| format!("BASE_URL: {e}"))?
+        .host_str()
+        .ok_or("BASE_URL has no host")?
+        .to_string();
+    let dev_login_email = std::env::var("DEV_LOGIN_EMAIL")
+        .ok()
+        .filter(|s| !s.is_empty());
+    if dev_login_email.is_some() && !matches!(host.as_str(), "localhost" | "127.0.0.1") {
+        return Err(
+            "DEV_LOGIN_EMAIL skips sign-in and is allowed only when BASE_URL is localhost".into(),
+        );
+    }
+    let google = match (
+        std::env::var("GOOGLE_CLIENT_ID"),
+        std::env::var("GOOGLE_CLIENT_SECRET"),
+    ) {
+        (Ok(client_id), Ok(client_secret)) if !client_id.is_empty() => Some(Google {
+            client_id,
+            client_secret,
+        }),
+        _ => None,
     };
-    let Ok(auth_str) = auth_header.to_str() else {
-        return false;
-    };
-    let Some(encoded) = auth_str.strip_prefix("Basic ") else {
-        return false;
-    };
-    let Ok(decoded_bytes) = BASE64.decode(encoded) else {
-        return false;
-    };
-    let Ok(decoded) = String::from_utf8(decoded_bytes) else {
-        return false;
-    };
-    let Some((user, pass)) = decoded.split_once(':') else {
-        return false;
-    };
-    // Constant-time comparison to prevent timing side-channels
-    let user_match = constant_time_eq(user.as_bytes(), expected_user.as_bytes());
-    let pass_match = constant_time_eq(pass.as_bytes(), expected_pass.as_bytes());
-    user_match & pass_match
+    let admin_emails = parse_emails(&std::env::var("ADMIN_EMAILS").unwrap_or_default());
+    if admin_emails.is_empty() {
+        tracing::warn!("ADMIN_EMAILS is empty: nobody can sign in");
+    }
+    if dev_login_email
+        .as_ref()
+        .is_some_and(|e| !admin_emails.contains(&e.to_lowercase()))
+    {
+        return Err("DEV_LOGIN_EMAIL must also be listed in ADMIN_EMAILS".into());
+    }
+    if google.is_none() && dev_login_email.is_none() {
+        tracing::warn!("GOOGLE_CLIENT_ID/SECRET not set: nobody can sign in");
+    }
+    Ok(AppState {
+        schema,
+        graph,
+        base_url,
+        google,
+        dev_login_email,
+        admin_emails: Arc::new(admin_emails),
+        http: reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .map_err(|e| e.to_string())?,
+        auth_window: Arc::new(Mutex::new((Instant::now(), 0))),
+    })
 }
 
-/// Length-independent constant-time byte comparison.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        // Compare against expected to consume constant time even on length mismatch
-        let mut result = 1u8;
-        for (x, y) in a.iter().zip(a.iter()) {
-            result &= ((x ^ y) == 0) as u8;
-        }
-        let _ = result;
-        return false;
+fn parse_emails(s: &str) -> HashSet<String> {
+    s.split(',')
+        .map(|e| e.trim().to_lowercase())
+        .filter(|e| e.contains('@'))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_admin_emails() {
+        let e = super::parse_emails(" A@Example.com, ,b@example.com,nope");
+        assert_eq!(e.len(), 2);
+        assert!(e.contains("a@example.com") && e.contains("b@example.com"));
     }
-    let mut result = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        result |= x ^ y;
-    }
-    result == 0
 }

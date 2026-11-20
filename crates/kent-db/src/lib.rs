@@ -12,6 +12,7 @@ pub mod content;
 pub mod dna_test;
 pub mod haplogroup;
 pub mod lineage;
+pub mod oauth;
 pub mod online_tree;
 pub mod participant;
 pub mod person;

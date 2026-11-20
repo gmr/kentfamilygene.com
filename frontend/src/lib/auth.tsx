@@ -1,101 +1,33 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
-
-interface AuthState {
-  username: string;
-  password: string;
-}
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 
 interface AuthContextValue {
+  /** undefined while the session check runs. */
+  email: string | null | undefined;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// Module-level ref so the urql client can read the auth header
-// without needing React context
-let _authHeader: string | null = null;
-
-export function getAuthHeader(): string | null {
-  return _authHeader;
-}
-
-function restoreCredentials(): AuthState | null {
-  const stored = sessionStorage.getItem('kent-auth');
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-// Eagerly initialize auth header so it's available before first render
-const _initialCredentials = restoreCredentials();
-if (_initialCredentials) {
-  _authHeader = 'Basic ' + btoa(`${_initialCredentials.username}:${_initialCredentials.password}`);
-}
-
+// The session is an HttpOnly cookie set by the server after Google sign-in
+// (/auth/login). Same-origin fetches send it, so no header handling is needed.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [credentials, setCredentials] = useState<AuthState | null>(_initialCredentials);
+  const [email, setEmail] = useState<string | null | undefined>(undefined);
 
-  // Keep the module-level ref in sync on subsequent changes
   useEffect(() => {
-    if (credentials) {
-      _authHeader = 'Basic ' + btoa(`${credentials.username}:${credentials.password}`);
-    } else {
-      _authHeader = null;
-    }
-  }, [credentials]);
-
-  const login = useCallback(async (username: string, password: string) => {
-    const header = 'Basic ' + btoa(`${username}:${password}`);
-
-    // Must be an auth-gated query: a public one (like stats) succeeds for any
-    // password, which let wrong credentials be stored and then fail on every
-    // admin screen.
-    const res = await fetch('/graphql', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': header,
-      },
-      body: JSON.stringify({
-        query: '{ adminNotes(limit: 1) { total } }',
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error('Invalid credentials');
-    }
-
-    const json = await res.json();
-    if (json.errors) {
-      throw new Error('Invalid credentials');
-    }
-
-    const state: AuthState = { username, password };
-    sessionStorage.setItem('kent-auth', JSON.stringify(state));
-    setCredentials(state);
+    fetch('/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => setEmail(body?.email ?? null))
+      .catch(() => setEmail(null));
   }, []);
 
-  const logout = useCallback(() => {
-    sessionStorage.removeItem('kent-auth');
-    setCredentials(null);
-    _authHeader = null;
+  const logout = useCallback(async () => {
+    await fetch('/auth/logout', { method: 'POST' });
+    setEmail(null);
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated: credentials !== null,
-        login,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ email, isAuthenticated: !!email, logout }}>
       {children}
     </AuthContext.Provider>
   );

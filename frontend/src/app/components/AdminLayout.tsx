@@ -27,8 +27,8 @@ export function AdminLayout() {
   const [{ data: statsData }] = useStatsQuery();
   const stats = statsData?.stats;
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/admin/login', { replace: true });
   };
 
