@@ -25,3 +25,7 @@ clap = { version = "4", features = ["derive"] }
 scraper = "0.22"
 regex = "1"
 html-escape = "0.2"
+rmcp = { version = "3.11", features = ["server", "macros", "transport-streamable-http-server"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sha2 = "0.10"
+rand = "0.9"

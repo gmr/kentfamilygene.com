@@ -15,7 +15,12 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/graphql': 'http://localhost:8080',
+      // 127.0.0.1: with DEV_LOGIN_EMAIL the server listens on IPv4 loopback only.
+      '/graphql': 'http://127.0.0.1:8080',
+      '/auth': 'http://127.0.0.1:8080',
+      // For Google sign-in through Vite, set BASE_URL=http://localhost:5173 and register
+      // http://localhost:5173/oauth/google/callback as a redirect URI in Google.
+      '/oauth': 'http://127.0.0.1:8080',
     },
   },
   build: {

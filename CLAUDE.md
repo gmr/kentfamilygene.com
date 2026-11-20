@@ -22,7 +22,7 @@ cargo run -p kent-api                   # start API server (default subcommand: 
 cargo run -p kent-api -- import --file data/extracted-data.json    # import extracted JSON
 cargo run -p kent-api -- import-html --file source.html --dry-run  # parse FTDNA source HTML (dry-run prints JSON)
 ```
-Local Neo4j: `docker compose up -d` (exposes bolt on 7687, browser on 7474). Copy `.env.example` to `.env` first — the server reads `NEO4J_URI/USER/PASSWORD`, `ADMIN_USERNAME/PASSWORD`, `PORT`, `STATIC_DIR`.
+Local Neo4j: `docker compose up -d` (exposes bolt on 7687, browser on 7474). Copy `.env.example` to `.env` first — the server reads `NEO4J_URI/USER/PASSWORD`, `ADMIN_EMAILS`, `BASE_URL`, `GOOGLE_CLIENT_ID/SECRET`, `DEV_LOGIN_EMAIL`, `PORT`, `STATIC_DIR`.
 
 ### Frontend (`frontend/`)
 ```bash
@@ -51,10 +51,12 @@ One module per entity (`lineage`, `person`, `participant`, `place`, `haplogroup`
 - `privacy.rs` — `mask_person()` enforces the 100-year living-person rule in public (unauthenticated) queries. This is the core privacy invariant; changes here are covered by `privacy_test.rs`.
 
 ### `crates/kent-api` — Axum server + CLI
-`main.rs` defines a `clap` CLI with `serve` (default), `import` (extracted JSON via `import.rs`), and `import-html` (FTDNA HTML via `html_import/`) subcommands. Serves GraphQL, GraphiQL, and static frontend files (`ServeDir` from `STATIC_DIR`). Auth is HTTP Basic → `AuthContext`. The `html_import/` pipeline is staged: `parse_document` → `parse_lineage`/`parse_participant`/`parse_ancestor`/`parse_date` → `dedup` → `persist`.
+`main.rs` defines a `clap` CLI with `serve` (default), `import` (extracted JSON via `import.rs`), and `import-html` (FTDNA HTML via `html_import/`) subcommands. Serves GraphQL, GraphiQL, MCP and static frontend files (`ServeDir` from `STATIC_DIR`).
+- `auth.rs` — Google sign-in. Only emails in `ADMIN_EMAILS` get in, re-checked on every request. Admin UI: `/auth/login` → Google → HttpOnly `kent_session` cookie → `AuthContext`. MCP: the app is its own OAuth 2.1 server (DCR + PKCE + refresh rotation + consent page). Grants, tokens and sessions are `OAuthGrant` nodes (`kent-db/src/oauth.rs`), stored as SHA-256 hashes. `DEV_LOGIN_EMAIL` skips Google and is refused unless `BASE_URL` is localhost.
+- `mcp.rs` — `rmcp` streamable HTTP at `/mcp` behind `auth::require_bearer`. Tools `graphql_schema`, `query` (read only) and `mutate` run against the same `KentSchema` as authenticated admin, so every admin operation is available without per-entity tools. The `html_import/` pipeline is staged: `parse_document` → `parse_lineage`/`parse_participant`/`parse_ancestor`/`parse_date` → `dedup` → `persist`.
 
 ### `frontend/` — admin SPA
-Vite + React 18 + TypeScript + Tailwind v4 + shadcn/ui + urql + react-hook-form + zod v4 + react-router-dom v6. All routes live under `/admin/*` behind a `RequireAuth` guard; auth is Basic Auth held in `sessionStorage` and injected via a module-level ref. GraphQL operations are authored as `.graphql` files under `src/graphql/` (mutations/ and queries/) and compiled to typed hooks by graphql-codegen. `@/` aliases `src/`.
+Vite + React 18 + TypeScript + Tailwind v4 + shadcn/ui + urql + react-hook-form + zod v4 + react-router-dom v6. All routes live under `/admin/*` behind a `RequireAuth` guard; auth is the server session cookie; `AuthProvider` reads `/auth/me`. GraphQL operations are authored as `.graphql` files under `src/graphql/` (mutations/ and queries/) and compiled to typed hooks by graphql-codegen. `@/` aliases `src/`.
 
 ## Conventions
 
